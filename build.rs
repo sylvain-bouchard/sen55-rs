@@ -3,17 +3,30 @@ fn main() {
     println!("cargo:rerun-if-changed=embedded-i2c-sen5x");
     println!("cargo:rerun-if-changed=tests/mocks");
 
-    // Initialize the C compiler utility instance
-    cc::Build::new()
-        // Include the target folder path so the C preprocessor can locate header files
+    let mut build = cc::Build::new();
+
+    build
         .include("embedded-i2c-sen5x")
-        // Statically compile the explicit driver and common protocol components
+        .define("SEN5X_I2C", None)
         .file("embedded-i2c-sen5x/sen5x_i2c.c")
         .file("embedded-i2c-sen5x/sensirion_common.c")
         .file("embedded-i2c-sen5x/sensirion_i2c.c")
-        .file("tests/mocks/sensirion_i2c_hal_mock.c")
-        // Suppress benign legacy C compiler warnings to keep the build output exceptionally clean
-        .warnings(false)
-        // Compile the target source collection into an archive object file named 'libsensirion_c.a'
-        .compile("sensirion_c");
+        .warnings(false);
+
+    // Target-specific configurations
+    let target = std::env::var("TARGET").unwrap_or_default();
+    
+    if target.contains("thumbv7em-none-eabihf") {
+        // When compiling for bare-metal Cortex-M4F, ensure we don't accidentally
+        // pull in host-specific operating system configurations or components.
+        build.flag("-ffreestanding");
+        // Optional: Ensure hardware floating point extensions match if needed
+        build.flag("-mfloat-abi=hard");
+        build.flag("-mfpu=fpv4-sp-d16");
+    } else {
+        // Only include the desktop HAL mock when running local host tests
+        build.file("tests/mocks/sensirion_i2c_hal_mock.c");
+    }
+
+    build.compile("sensirion_c");
 }

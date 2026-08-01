@@ -1,0 +1,13 @@
+# .cargo/config.toml
+
+[target.thumbv7em-none-eabihf]
+# Instruct the linker to use the thumbv7em target parameters
+runner = "probe-rs run --chip nRF52840_xxAA" # If using probe-rs for flashing
+rustflags = [
+  "-C", "link-arg=-Tlink.x", # Custom linker script required by cortex-m-rt / Embassy
+  "-C", "link-arg=-defmt",   # Linker script injection for defmt logging support
+]
+
+[build]
+# Optional: Set the default target so you don't have to pass --target every time
+# target = "thumbv7em-none-eabihf"
