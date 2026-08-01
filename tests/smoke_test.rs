@@ -1,3 +1,5 @@
+use sen5x_rust::Sen5xDriver;
+
 #[link(name = "sensirion_c", kind = "static")]
 extern "C" {
     // The exact signature from the frozen `sen5x_i2c.h` header file
@@ -22,4 +24,14 @@ fn test_c_driver_linkage() {
 
     // We are just checking that it doesn't crash or fail to link
     assert!(result != 0 || result == 0);
+}
+
+#[test]
+fn test_safe_driver_interface() {
+    let mut driver = Sen5xDriver::new();
+    
+    // Trigger our wrapped routine
+    let result = driver.device_reset();
+    
+    assert!(result.is_ok(), "Safe driver bridge failed to communicate with target C layer!");
 }
