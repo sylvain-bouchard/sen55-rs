@@ -113,6 +113,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sen5x-rs"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal",
+]
+
+[[package]]
 name = "sen5x-rust"
 version = "0.1.0"
 dependencies = [
