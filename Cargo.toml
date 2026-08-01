@@ -1,0 +1,23 @@
+[package]
+name = "sen5x-rust"
+version = "0.1.0"
+edition = "2021"
+authors = ["Sylvain Bouchard"]
+description = "An idiomatic, zero-allocation no_std Rust driver for the Sensirion SEN55 environmental sensor node"
+resolver = "2"
+
+[dependencies]
+# Standard embedded abstraction traits (Async variant)
+embedded-hal-async = "1.0.0"
+embedded-hal = "1.0.0"
+
+# Ultra-lightweight logging framework designed for microcontrollers
+defmt = "1"
+
+[build-dependencies]
+# Automates compiling the frozen C files during 'cargo build'
+cc = "1.0"
+
+[dev-dependencies]
+# Used for mocking or verifying floating point comparisons in your test blocks
+approx = "0.5"
