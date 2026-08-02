@@ -29,7 +29,15 @@ impl Sen5xDriver {
     pub fn new() -> Self {
         Self
     }
+}
 
+impl Default for Sen5xDriver {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl Sen5xDriver {
     /// Triggers a hard command reset on the remote SEN5x module over the I2C bus
     pub fn device_reset(&mut self) -> Result<(), Sen5xError> {
         let rc = unsafe { ffi::sen5x_device_reset() };
