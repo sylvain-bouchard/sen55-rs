@@ -21,3 +21,7 @@ cc = "1.0"
 [dev-dependencies]
 # Used for mocking or verifying floating point comparisons in your test blocks
 approx = "0.5"
+
+[features]
+default = []
+mock = []

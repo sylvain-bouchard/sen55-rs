@@ -1,31 +1,32 @@
 fn main() {
     // Tell Cargo to re-run this script only if files inside the c_src directory change
-    println!("cargo:rerun-if-changed=embedded-i2c-sen5x");
-    println!("cargo:rerun-if-changed=tests/mocks");
+    println!("cargo:rerun-if-changed=hal/esp-idf");
+    println!("cargo:rerun-if-changed=hal/mock");
+    println!("cargo:rerun-if-changed=hal/desktop");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_MOCK");
 
     let mut build = cc::Build::new();
 
     build
-        .include("embedded-i2c-sen5x")
+        .include("hal/esp-idf")
         .define("SEN5X_I2C", None)
-        .file("embedded-i2c-sen5x/sen5x_i2c.c")
-        .file("embedded-i2c-sen5x/sensirion_common.c")
-        .file("embedded-i2c-sen5x/sensirion_i2c.c")
+        .file("hal/esp-idf/sen5x_i2c.c")
+        .file("hal/esp-idf/sensirion_common.c")
+        .file("hal/esp-idf/sensirion_i2c.c")
         .warnings(false);
 
     // Target-specific configurations
     let target = std::env::var("TARGET").unwrap_or_default();
-    
-    if target.contains("thumbv7em-none-eabihf") {
-        // When compiling for bare-metal Cortex-M4F, ensure we don't accidentally
-        // pull in host-specific operating system configurations or components.
-        build.flag("-ffreestanding");
-        // Optional: Ensure hardware floating point extensions match if needed
-        build.flag("-mfloat-abi=hard");
-        build.flag("-mfpu=fpv4-sp-d16");
+
+    if std::env::var("CARGO_FEATURE_MOCK").is_ok() {
+        println!("cargo:warning=Building with SEN5x mock HAL");
+        build.file("hal/mock/sensirion_i2c_hal_mock.c");
+    } else if target.contains("esp") {
+        println!("cargo:warning=Building with ESP-IDF SEN5x HAL");
+        build.file("hal/esp-idf/sensirion_i2c_hal.c");
     } else {
-        // Only include the desktop HAL mock when running local host tests
-        build.file("tests/mocks/sensirion_i2c_hal_mock.c");
+        println!("cargo:warning=Building with desktop SEN5x HAL");
+        build.file("hal/desktop/sensirion_i2c_hal_mock.c");
     }
 
     build.compile("sensirion_c");
