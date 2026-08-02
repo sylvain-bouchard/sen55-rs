@@ -40,7 +40,10 @@ where
     I2C: I2c<Error = E>,
 {
     pub fn new(i2c: I2C) -> Self {
-        Self { i2c, crc: Crc8::create_msb(49), }
+        Self {
+            i2c,
+            crc: Crc8::create_msb(49),
+        }
     }
 
     pub fn destroy(self) -> I2C {
