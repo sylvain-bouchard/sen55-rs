@@ -33,6 +33,17 @@ int8_t sensirion_i2c_hal_write(uint8_t address, const uint8_t* data, uint16_t co
 
 // Stubs out the low-level I2C hardware read routine
 int8_t sensirion_i2c_hal_read(uint8_t address, uint8_t* data, uint16_t count) {
-    // Return 0 to pretend the read transaction succeeded perfectly
+    if ((mock_read_offset + count) > mock_read_length) {
+        return -1;
+    }
+
+    memcpy(
+        data,
+        &mock_read_buffer[mock_read_offset],
+        count
+    );
+
+    mock_read_offset += count;
+
     return 0;
 }
