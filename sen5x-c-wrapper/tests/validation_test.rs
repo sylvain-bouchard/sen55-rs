@@ -1,3 +1,4 @@
+use crc8::Crc8;
 use sen5x_rust::Sen5xDriver;
 
 #[test]
@@ -39,28 +40,14 @@ fn validate_measurement_parsing_against_reference() {
     assert_eq!(readings.nox_index, Some(2.0));
 }
 
-fn sensirion_crc(data: &[u8]) -> u8 {
-    let mut crc = 0xFF;
-
-    for byte in data {
-        crc ^= *byte;
-
-        for _ in 0..8 {
-            if crc & 0x80 != 0 {
-                crc = (crc << 1) ^ 0x31;
-            } else {
-                crc <<= 1;
-            }
-        }
-    }
-
-    crc
-}
-
 fn append_word(buffer: &mut Vec<u8>, value: u16) {
     let bytes = value.to_be_bytes();
 
     buffer.push(bytes[0]);
     buffer.push(bytes[1]);
-    buffer.push(sensirion_crc(&bytes));
+
+    let mut crc8_engine = Crc8::create_msb(49);
+    let crc_byte = crc8_engine.calc(&bytes, 2, 0xFF);
+
+    buffer.push(crc_byte);
 }

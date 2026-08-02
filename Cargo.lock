@@ -34,6 +34,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc8"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b31d2174830f395fd7e413c2f8a119252de36356982f805f495269331e97559e"
+
+[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -116,6 +122,7 @@ dependencies = [
 name = "sen5x-rs"
 version = "0.1.0"
 dependencies = [
+ "crc8",
  "embedded-hal",
 ]
 
@@ -125,6 +132,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "cc",
+ "crc8",
  "defmt",
  "embedded-hal",
  "embedded-hal-async",
