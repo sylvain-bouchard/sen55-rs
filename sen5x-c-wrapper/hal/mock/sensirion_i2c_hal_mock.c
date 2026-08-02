@@ -1,4 +1,19 @@
 #include "sensirion_i2c_hal.h"
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+static uint8_t mock_read_buffer[32];
+static uint16_t mock_read_length = 0;
+static uint16_t mock_read_offset = 0;
+
+void sensirion_i2c_hal_mock_set_read_buffer(
+    const uint8_t* data,
+    uint16_t length)
+{
+    memcpy(mock_read_buffer, data, length);
+    mock_read_length = length;
+}
 
 // Stubs out the physical microsecond hardware timers so desktop tests run instantly.
 void sensirion_i2c_hal_sleep_usec(uint32_t useconds) {
