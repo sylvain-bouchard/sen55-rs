@@ -8,7 +8,7 @@ fn test_c_wrapper_safe_interface() {
     let result = driver.device_reset();
 
     println!("device_reset result: {:?}", result);
-    
+
     assert!(
         result.is_ok(),
         "C wrapper failed to communicate with Sensirion driver"
