@@ -13,6 +13,7 @@ void sensirion_i2c_hal_mock_set_read_buffer(
 {
     memcpy(mock_read_buffer, data, length);
     mock_read_length = length;
+    mock_read_offset = 0;
 }
 
 // Stubs out the physical microsecond hardware timers so desktop tests run instantly.
