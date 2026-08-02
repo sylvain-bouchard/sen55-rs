@@ -1,6 +1,6 @@
 #![no_std]
 
-mod ffi;
+pub mod ffi;
 
 /// Custom error type wrapping the raw C status return values
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
