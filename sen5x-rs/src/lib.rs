@@ -4,6 +4,7 @@ use crc8::Crc8;
 use embedded_hal::i2c::I2c;
 
 const SEN5X_I2C_ADDRESS: u8 = 0x69;
+const CRC_INIT: u8 = 0xFF;
 
 #[derive(Debug)]
 pub enum Sen5xError<E> {
@@ -50,6 +51,16 @@ where
         self.i2c
     }
 
+    fn check_crc(&mut self, data: &[u8], expected_crc: u8) -> Result<(), Sen5xError<E>> {
+        let calculated_crc = self.crc.calc(data, data.len() as i32, CRC_INIT);
+
+        if calculated_crc != expected_crc {
+            Err(Sen5xError::Crc)
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn device_reset(&mut self) -> Result<(), Sen5xError<E>> {
         let command = [0xD3, 0x04];
 
@@ -89,10 +100,7 @@ where
         let mut buffer = [0u8; 3];
         self.i2c.read(SEN5X_I2C_ADDRESS, &mut buffer)?;
 
-        let calculated_crc = self.crc.calc(&buffer[0..2], 2, 0xFF);
-        if calculated_crc != buffer[2] {
-            return Err(Sen5xError::Crc);
-        }
+        self.check_crc(&buffer[0..2], buffer[2])?;
 
         // The sensor returns 0x01 in the second byte if a fresh sample is ready
         Ok(buffer[1] == 1)
@@ -108,10 +116,7 @@ where
 
         // Validate the CRC-8 byte appended to every 2-byte word chunk
         for chunk in buffer.chunks_exact(3) {
-            let calculated_crc = self.crc.calc(&chunk[0..2], 2, 0xFF);
-            if calculated_crc != chunk[2] {
-                return Err(Sen5xError::Crc);
-            }
+            self.check_crc(&chunk[0..2], chunk[2])?;
         }
 
         // Helper closures to parse big-endian words out of the raw response
