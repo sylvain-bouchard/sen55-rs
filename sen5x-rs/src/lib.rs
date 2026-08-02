@@ -59,24 +59,27 @@ where
         Ok(())
     }
 
-    pub fn is_data_ready(&mut self) -> Result<bool, Sen5xError<E>> {
+    /// Triggers the data-ready state check sequence.
+    /// **NOTE:** The calling runtime MUST wait at least 20ms before calling `read_data_ready_response`.
+    pub fn request_data_ready(&mut self) -> Result<(), Sen5xError<E>> {
         let command = [0x02, 0x02];
-        let mut buffer = [0u8; 3]; // 2 data bytes + 1 CRC byte
 
-        // Write the command and read back the 3-byte status packet
-        self.i2c
-            .write_read(SEN5X_I2C_ADDRESS, &command, &mut buffer)?;
+        self.i2c.write(SEN5X_I2C_ADDRESS, &command)?;
 
-        // The crc8 crate's .calc() method takes a mutable reference to self because it updates
-        // internal bit tracking fields during execution, so we use self.crc directly.
+        Ok(())
+    }
+
+    /// Reads back and validates the 3-byte data-ready status packet from the sensor.
+    pub fn read_data_ready_response(&mut self) -> Result<bool, Sen5xError<E>> {
+        let mut buffer = [0u8; 3];
+        self.i2c.read(SEN5X_I2C_ADDRESS, &mut buffer)?;
+
         let calculated_crc = self.crc.calc(&buffer[0..2], 2, 0xFF);
-
-        // Validate the integrity of the data bytes against the received CRC byte
         if calculated_crc != buffer[2] {
             return Err(Sen5xError::Crc);
         }
 
-        // The sensor returns 0x01 in the second byte (buffer[1]) if a fresh sample is ready
+        // The sensor returns 0x01 in the second byte if a fresh sample is ready
         Ok(buffer[1] == 1)
     }
 }
