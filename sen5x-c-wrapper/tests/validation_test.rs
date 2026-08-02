@@ -1,10 +1,5 @@
 use sen5x_rust::Sen5xDriver;
 
-#[cfg(feature = "mock")]
-extern "C" {
-    fn sensirion_i2c_hal_mock_set_read_buffer(data: *const u8, length: u16);
-}
-
 #[test]
 #[cfg(feature = "mock")]
 fn validate_measurement_parsing_against_reference() {
