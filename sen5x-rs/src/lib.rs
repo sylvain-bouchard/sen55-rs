@@ -5,6 +5,7 @@ use embedded_hal::i2c::I2c;
 
 const SEN5X_I2C_ADDRESS: u8 = 0x69;
 const CRC_INIT: u8 = 0xFF;
+const MAX_RESPONSE_WORDS: usize = 16;
 
 #[derive(Debug)]
 pub enum Sen5xError<E> {
@@ -16,6 +17,24 @@ pub enum Sen5xError<E> {
 impl<E> From<E> for Sen5xError<E> {
     fn from(error: E) -> Self {
         Self::I2c(error)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SensorString {
+    bytes: [u8; 32],
+    len: usize,
+}
+
+impl SensorString {
+    fn from_bytes(bytes: [u8; 32]) -> Self {
+        let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+
+        Self { bytes, len }
+    }
+
+    pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
+        core::str::from_utf8(&self.bytes[..self.len])
     }
 }
 
@@ -60,22 +79,26 @@ where
         self.i2c
     }
 
-    fn check_crc(&mut self, data: &[u8], expected_crc: u8) -> Result<(), Sen5xError<E>> {
-        let calculated_crc = self.crc.calc(data, data.len() as i32, CRC_INIT);
-
-        if calculated_crc != expected_crc {
-            Err(Sen5xError::Crc)
-        } else {
-            Ok(())
-        }
-    }
-
     pub fn device_reset(&mut self) -> Result<(), Sen5xError<E>> {
         let command = [0xD3, 0x04];
 
         self.i2c.write(SEN5X_I2C_ADDRESS, &command)?;
 
         Ok(())
+    }
+
+    pub fn read_product_name(&mut self) -> Result<SensorString, Sen5xError<E>> {
+        self.read_string32([0xD0, 0x14])
+    }
+
+    pub fn read_serial_number(&mut self) -> Result<SensorString, Sen5xError<E>> {
+        self.read_string32([0xD0, 0x33])
+    }
+
+    pub fn read_device_status(&mut self) -> Result<u16, Sen5xError<E>> {
+        let words = self.read_words::<1>([0xD2, 0x06])?;
+
+        Ok(words[0])
     }
 
     pub fn start_measurement(&mut self) -> Result<(), Sen5xError<E>> {
@@ -106,59 +129,43 @@ where
 
     /// Reads back and validates the 3-byte data-ready status packet from the sensor.
     pub fn read_data_ready_response(&mut self) -> Result<bool, Sen5xError<E>> {
-        let mut buffer = [0u8; 3];
-        self.i2c.read(SEN5X_I2C_ADDRESS, &mut buffer)?;
+        let data = self.read_bytes::<2>([0x02, 0x02])?;
 
-        self.check_crc(&buffer[0..2], buffer[2])?;
-
-        // The sensor returns 0x01 in the second byte if a fresh sample is ready
-        Ok(buffer[1] == 1)
+        Ok(data[1] == 1)
     }
 
     /// Reads out the 24-byte data block containing air metrics and converts them into physical units.
     pub fn read_measurements(&mut self) -> Result<Sen5xMeasurements, Sen5xError<E>> {
-        let command = [0x03, 0xC4];
-        let mut buffer = [0u8; 24]; // 8 telemetry fields * (2 data bytes + 1 CRC byte)
+        let words = self.read_words::<8>([0x03, 0xC4])?;
 
-        self.i2c
-            .write_read(SEN5X_I2C_ADDRESS, &command, &mut buffer)?;
+        let pm1_0 = words[0] as f32 / 10.0;
+        let pm2_5 = words[1] as f32 / 10.0;
+        let pm4_0 = words[2] as f32 / 10.0;
+        let pm10_0 = words[3] as f32 / 10.0;
 
-        // Validate the CRC-8 byte appended to every 2-byte word chunk
-        for chunk in buffer.chunks_exact(3) {
-            self.check_crc(&chunk[0..2], chunk[2])?;
-        }
+        let humidity_raw = words[4] as i16;
+        let temperature_raw = words[5] as i16;
+        let voc_raw = words[6] as i16;
+        let nox_raw = words[7] as i16;
 
-        // Helper closures to parse big-endian words out of the raw response
-        let read_u16 =
-            |idx: usize| -> u16 { u16::from_be_bytes([buffer[idx * 3], buffer[idx * 3 + 1]]) };
-        let read_i16 =
-            |idx: usize| -> i16 { i16::from_be_bytes([buffer[idx * 3], buffer[idx * 3 + 1]]) };
-
-        // PM concentrations are scaled by 10.0
-        let pm1_0 = (read_u16(0) as f32) / 10.0;
-        let pm2_5 = (read_u16(1) as f32) / 10.0;
-        let pm4_0 = (read_u16(2) as f32) / 10.0;
-        let pm10_0 = (read_u16(3) as f32) / 10.0;
-
-        // Sensirion sets unused or unsupported metrics (e.g., NOx on a SEN54) to 0x7FFF
-        let humidity = match read_i16(4) {
+        let humidity = match humidity_raw {
             0x7FFF => None,
-            val => Some((val as f32) / 100.0),
+            value => Some(value as f32 / 100.0),
         };
 
-        let temperature = match read_i16(5) {
+        let temperature = match temperature_raw {
             0x7FFF => None,
-            val => Some((val as f32) / 200.0),
+            value => Some(value as f32 / 200.0),
         };
 
-        let voc_index = match read_i16(6) {
+        let voc_index = match voc_raw {
             0x7FFF => None,
-            val => Some((val as f32) / 10.0),
+            value => Some(value as f32 / 10.0),
         };
 
-        let nox_index = match read_i16(7) {
+        let nox_index = match nox_raw {
             0x7FFF => None,
-            val => Some((val as f32) / 10.0),
+            value => Some(value as f32 / 10.0),
         };
 
         Ok(Sen5xMeasurements {
@@ -171,5 +178,55 @@ where
             voc_index,
             nox_index,
         })
+    }
+
+    fn check_crc(&mut self, data: &[u8], expected_crc: u8) -> Result<(), Sen5xError<E>> {
+        let calculated_crc = self.crc.calc(data, data.len() as i32, CRC_INIT);
+
+        if calculated_crc != expected_crc {
+            Err(Sen5xError::Crc)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn read_bytes<const N: usize>(&mut self, command: [u8; 2]) -> Result<[u8; N], Sen5xError<E>> {
+        let mut buffer = [0u8; MAX_RESPONSE_WORDS * 3];
+
+        let response_len = (N / 2) * 3;
+        let response = &mut buffer[..response_len];
+
+        self.i2c.write_read(SEN5X_I2C_ADDRESS, &command, response)?;
+
+        let mut bytes = [0u8; N];
+
+        for (index, chunk) in response.chunks_exact(3).enumerate() {
+            self.check_crc(&chunk[..2], chunk[2])?;
+
+            bytes[index * 2] = chunk[0];
+            bytes[index * 2 + 1] = chunk[1];
+        }
+
+        Ok(bytes)
+    }
+
+    fn read_words<const N: usize>(&mut self, command: [u8; 2]) -> Result<[u16; N], Sen5xError<E>> {
+        const MAX_WORD_BYTES: usize = MAX_RESPONSE_WORDS * 2;
+
+        let bytes = self.read_bytes::<MAX_WORD_BYTES>(command)?;
+
+        let mut words = [0u16; N];
+
+        for (index, chunk) in bytes[..N * 2].chunks_exact(2).enumerate() {
+            words[index] = u16::from_be_bytes([chunk[0], chunk[1]]);
+        }
+
+        Ok(words)
+    }
+
+    fn read_string32(&mut self, command: [u8; 2]) -> Result<SensorString, Sen5xError<E>> {
+        let bytes = self.read_bytes::<32>(command)?;
+
+        Ok(SensorString::from_bytes(bytes))
     }
 }
