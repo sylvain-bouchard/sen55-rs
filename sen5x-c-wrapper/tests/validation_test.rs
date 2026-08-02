@@ -1,5 +1,6 @@
 use crc8::Crc8;
 use sen5x_rust::Sen5xDriver;
+use serial_test::serial;
 
 fn generate_mock_payload() -> Vec<u8> {
     let mut response = Vec::new();
@@ -30,8 +31,19 @@ fn generate_mock_payload() -> Vec<u8> {
     response
 }
 
+fn generate_corrupted_payload() -> Vec<u8> {
+    let mut response = generate_mock_payload();
+
+    // Corrupt the CRC byte of the first PM1.0 word.
+    // Format is: [MSB][LSB][CRC], repeated for each measurement.
+    response[2] ^= 0xFF;
+
+    response
+}
+
 #[test]
 #[cfg(feature = "mock")]
+#[serial]
 fn verify_c_reference_implementation() {
     let response = generate_mock_payload();
 
@@ -76,6 +88,7 @@ fn verify_c_reference_implementation() {
 
 #[test]
 #[cfg(feature = "mock")]
+#[serial]
 fn verify_rust_driver_implementation() {
     let response = generate_mock_payload();
 
@@ -98,4 +111,68 @@ fn verify_rust_driver_implementation() {
     assert_eq!(rust_readings.temperature, Some(20.0));
     assert_eq!(rust_readings.voc_index, Some(15.0));
     assert_eq!(rust_readings.nox_index, Some(2.0));
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn verify_crc_failure_is_detected() {
+    let response = generate_corrupted_payload();
+
+    unsafe {
+        sen5x_rust::ffi::sensirion_i2c_hal_mock_set_read_buffer(
+            response.as_ptr(),
+            response.len() as u16,
+        );
+    }
+
+    let mut rust_driver = Sen5xDriver::new();
+
+    let result = rust_driver.read_measurements();
+
+    assert!(
+        result.is_err(),
+        "Driver should reject payload with invalid CRC"
+    );
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn verify_c_reference_rejects_bad_crc() {
+    let response = generate_corrupted_payload();
+
+    unsafe {
+        sen5x_rust::ffi::sensirion_i2c_hal_mock_set_read_buffer(
+            response.as_ptr(),
+            response.len() as u16,
+        );
+    }
+
+    let mut c_pm1_0 = 0u16;
+    let mut c_pm2_5 = 0u16;
+    let mut c_pm4_0 = 0u16;
+    let mut c_pm10_0 = 0u16;
+    let mut c_humidity = 0i16;
+    let mut c_temp = 0i16;
+    let mut c_voc = 0i16;
+    let mut c_nox = 0i16;
+
+    let error = unsafe {
+        sen5x_rust::ffi::sen5x_read_measured_values(
+            &mut c_pm1_0,
+            &mut c_pm2_5,
+            &mut c_pm4_0,
+            &mut c_pm10_0,
+            &mut c_humidity,
+            &mut c_temp,
+            &mut c_voc,
+            &mut c_nox,
+        )
+    };
+
+    assert_ne!(
+        error, 0,
+        "C reference driver unexpectedly accepted corrupted CRC"
+    );
 }
