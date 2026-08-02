@@ -1,5 +1,7 @@
 #![no_std]
 
+mod ffi;
+
 // Ensure we link the static C library when building our core crate
 #[link(name = "sensirion_c", kind = "static")]
 extern "C" {
@@ -50,7 +52,7 @@ impl Sen5xDriver {
 
     /// Triggers a hard command reset on the remote SEN5x module over the I2C bus
     pub fn device_reset(&mut self) -> Result<(), Sen5xError> {
-        let rc = unsafe { sen5x_device_reset() };
+        let rc = unsafe { ffi::sen5x_device_reset() };
         if rc == 0 {
             Ok(())
         } else {
@@ -60,7 +62,7 @@ impl Sen5xDriver {
 
     pub fn is_data_ready(&mut self) -> Result<bool, Sen5xError> {
         let mut ready = false;
-        let rc = unsafe { sen5x_read_data_ready(&mut ready) };
+        let rc = unsafe { ffi::sen5x_read_data_ready(&mut ready) };
         
         if rc == 0 {
             Ok(ready)
@@ -71,7 +73,7 @@ impl Sen5xDriver {
 
     /// Puts the sensor into continuous sampling mode
     pub fn start_measurement(&mut self) -> Result<(), Sen5xError> {
-        let rc = unsafe { sen5x_start_measurement() };
+        let rc = unsafe { ffi::sen5x_start_measurement() };
         if rc == 0 {
             Ok(())
         } else {
@@ -81,7 +83,7 @@ impl Sen5xDriver {
 
     /// Stops the internal fan and laser diode sampling loop to conserve system power
     pub fn stop_measurement(&mut self) -> Result<(), Sen5xError> {
-        let rc = unsafe { sen5x_stop_measurement() };
+        let rc = unsafe { ffi::sen5x_stop_measurement() };
         if rc == 0 {
             Ok(())
         } else {
@@ -102,7 +104,7 @@ impl Sen5xDriver {
         let mut raw_nox = 0i16;
 
         let rc = unsafe {
-            sen5x_read_measured_values(
+            ffi::sen5x_read_measured_values(
                 &mut raw_pm1_0,
                 &mut raw_pm2_5,
                 &mut raw_pm4_0,
