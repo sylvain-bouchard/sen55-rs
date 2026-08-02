@@ -21,13 +21,22 @@ impl<E> From<E> for Sen5xError<E> {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Sen5xMeasurements {
+    /// PM concentrations in µg/m³ × 10
     pub pm1_0: f32,
     pub pm2_5: f32,
     pub pm4_0: f32,
     pub pm10_0: f32,
+
+    /// Relative humidity in % × 100
     pub humidity: Option<f32>,
+
+    /// Temperature in °C × 200
     pub temperature: Option<f32>,
+
+    /// VOC index × 10
     pub voc_index: Option<f32>,
+
+    /// NOx index × 10
     pub nox_index: Option<f32>,
 }
 
