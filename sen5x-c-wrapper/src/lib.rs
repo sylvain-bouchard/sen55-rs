@@ -11,10 +11,10 @@ pub enum Sen5xError {
 /// Labeled sensor measurement data packet parsed out into clean types
 #[derive(Debug, Clone, PartialEq)]
 pub struct SensorReadings {
-    pub pm1_0: f32,               // µg/m³
-    pub pm2_5: f32,               // µg/m³
-    pub pm4_0: f32,               // µg/m³
-    pub pm10_0: f32,              // µg/m³
+    pub pm1_0: Option<f32>,       // µg/m³ (None when unavailable, raw 0xFFFF)
+    pub pm2_5: Option<f32>,       // µg/m³ (None when unavailable, raw 0xFFFF)
+    pub pm4_0: Option<f32>,       // µg/m³ (None when unavailable, raw 0xFFFF)
+    pub pm10_0: Option<f32>,      // µg/m³ (None when unavailable, raw 0xFFFF)
     pub humidity: Option<f32>,    // %RH (Option because some variants omit it)
     pub temperature: Option<f32>, // °C
     pub voc_index: Option<f32>,   // 1-500 point index
@@ -112,12 +112,32 @@ impl Sen5xDriver {
         // to `0x7FFF` (transposed to 32767) for invalid fields.
         let is_invalid = |val: i16| val == 32767;
 
+        // PM channels report 0xFFFF when no data is available (e.g. before the
+        // first sample, or measurement not running).
+        let is_pm_invalid = |val: u16| val == 0xFFFF;
+
         Ok(SensorReadings {
-            // PM values arrive scaled by 10 (e.g. 125 = 12.5 µg/m³)
-            pm1_0: (raw_pm1_0 as f32) / 10.0,
-            pm2_5: (raw_pm2_5 as f32) / 10.0,
-            pm4_0: (raw_pm4_0 as f32) / 10.0,
-            pm10_0: (raw_pm10_0 as f32) / 10.0,
+            // PM values arrive scaled by 10 (e.g. 125 = 12.5 µg/m³).
+            pm1_0: if is_pm_invalid(raw_pm1_0) {
+                None
+            } else {
+                Some((raw_pm1_0 as f32) / 10.0)
+            },
+            pm2_5: if is_pm_invalid(raw_pm2_5) {
+                None
+            } else {
+                Some((raw_pm2_5 as f32) / 10.0)
+            },
+            pm4_0: if is_pm_invalid(raw_pm4_0) {
+                None
+            } else {
+                Some((raw_pm4_0 as f32) / 10.0)
+            },
+            pm10_0: if is_pm_invalid(raw_pm10_0) {
+                None
+            } else {
+                Some((raw_pm10_0 as f32) / 10.0)
+            },
 
             // Environmental data scales by 100 (humidity) and 200 (temperature)
             humidity: if is_invalid(raw_humidity) {
