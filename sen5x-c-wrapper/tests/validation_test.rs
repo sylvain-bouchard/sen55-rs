@@ -102,11 +102,43 @@ fn verify_rust_driver_implementation() {
     let mut rust_driver = Sen5xDriver::new();
     let rust_readings = rust_driver.read_measurements().expect("Rust driver failed");
 
-    assert_eq!(rust_readings.pm1_0, 10.0);
-    assert_eq!(rust_readings.pm2_5, 25.0);
-    assert_eq!(rust_readings.pm4_0, 40.0);
-    assert_eq!(rust_readings.pm10_0, 100.0);
+    assert_eq!(rust_readings.pm1_0, Some(10.0));
+    assert_eq!(rust_readings.pm2_5, Some(25.0));
+    assert_eq!(rust_readings.pm4_0, Some(40.0));
+    assert_eq!(rust_readings.pm10_0, Some(100.0));
 
+    assert_eq!(rust_readings.humidity, Some(50.0));
+    assert_eq!(rust_readings.temperature, Some(20.0));
+    assert_eq!(rust_readings.voc_index, Some(15.0));
+    assert_eq!(rust_readings.nox_index, Some(2.0));
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn verify_rust_driver_handles_pm_sentinel() {
+    // A raw 0xFFFF on a PM channel means "no data"; the driver must map it
+    // to None instead of reporting 6553.5 µg/m³.
+    let mut response = generate_mock_payload();
+    response[0] = 0xFF;
+    response[1] = 0xFF;
+    let mut crc8_engine = Crc8::create_msb(49);
+    response[2] = crc8_engine.calc(&[0xFF, 0xFF], 2, 0xFF);
+
+    unsafe {
+        sen5x_rust::ffi::sensirion_i2c_hal_mock_set_read_buffer(
+            response.as_ptr(),
+            response.len() as u16,
+        );
+    }
+
+    let mut rust_driver = Sen5xDriver::new();
+    let rust_readings = rust_driver.read_measurements().expect("Rust driver failed");
+
+    assert_eq!(rust_readings.pm1_0, None);
+    assert_eq!(rust_readings.pm2_5, Some(25.0));
+    assert_eq!(rust_readings.pm4_0, Some(40.0));
+    assert_eq!(rust_readings.pm10_0, Some(100.0));
     assert_eq!(rust_readings.humidity, Some(50.0));
     assert_eq!(rust_readings.temperature, Some(20.0));
     assert_eq!(rust_readings.voc_index, Some(15.0));
