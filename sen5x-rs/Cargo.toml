@@ -10,7 +10,6 @@ keywords = ["embedded", "sensor", "sensirion", "sen55", "sen5x"]
 categories = ["embedded", "no-std", "hardware-support"]
 
 [dependencies]
-crc8 = "0.1.1"
 embedded-hal-async = "1.0"
 
 [dev-dependencies]
