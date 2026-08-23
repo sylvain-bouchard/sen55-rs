@@ -203,6 +203,63 @@ fn read_measurements_marks_pm_sentinel_as_none() {
 }
 
 #[test]
+fn read_measurements_handles_negative_temperature() {
+    // Raw -100 → -100 / 200 = -0.5 °C. Positive-only tests can't catch a
+    // sign bug: if the driver used unsigned decode, -100 would wrap to 65436
+    // and yield 327.18 °C instead of -0.5.
+    let mut payload = Vec::new();
+    for value in [100u16, 250, 400, 1000] {
+        word(value, &mut payload);
+    }
+    // humidity=5000 (50 %), temperature=-100 (-0.5 °C), voc=150, nox=20
+    for value in [5000i16, -100i16, 150i16, 20i16] {
+        word(value as u16, &mut payload);
+    }
+
+    let readings = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        driver
+            .read_measurements()
+            .await
+            .expect("read_measurements failed")
+    });
+
+    assert_eq!(readings.temperature, Some(-0.5));
+    assert_eq!(readings.humidity, Some(50.0));
+}
+
+#[test]
+fn read_measurements_all_sentinels_yield_none() {
+    // Every channel at its "no data" sentinel: PM → 0xFFFF, environment →
+    // 0x7FFF. Both drivers must map all eight to None, covering the sentinel
+    // classification for every channel in one shot.
+    let mut payload = Vec::new();
+    for value in [0xFFFFu16; 4] {
+        word(value, &mut payload);
+    }
+    for value in [0x7FFFi16; 4] {
+        word(value as u16, &mut payload);
+    }
+
+    let readings = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        driver
+            .read_measurements()
+            .await
+            .expect("read_measurements failed")
+    });
+
+    assert_eq!(readings.pm1_0, None);
+    assert_eq!(readings.pm2_5, None);
+    assert_eq!(readings.pm4_0, None);
+    assert_eq!(readings.pm10_0, None);
+    assert_eq!(readings.humidity, None);
+    assert_eq!(readings.temperature, None);
+    assert_eq!(readings.voc_index, None);
+    assert_eq!(readings.nox_index, None);
+}
+
+#[test]
 fn read_measurements_rejects_corrupted_crc() {
     let mut payload = measurements_payload();
     payload[2] ^= 0xFF; // corrupt the CRC of the first PM1.0 word
