@@ -2,6 +2,7 @@
 
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::i2c::I2c;
+use sen5x_conversion::{humidity_reading, index_reading, pm_reading, temperature_reading};
 
 const SEN5X_I2C_ADDRESS: u8 = 0x69;
 const MAX_RESPONSE_WORDS: usize = 16;
@@ -246,55 +247,22 @@ where
 
     /// Reads out the 24-byte data block containing air metrics and converts
     /// them into physical units.
+    ///
+    /// The `0xFFFF`/`0x7FFF` "no data" sentinels and the scale factors are
+    /// defined once in [`sen5x_conversion`], the same crate the C reference
+    /// facade uses, so the two drivers cannot drift on this logic.
     pub async fn read_measurements(&mut self) -> Result<Sen5xMeasurements, Sen5xError<E>> {
         let words = self.read_words::<8>([0x03, 0xC4], DELAY_20MS_US).await?;
 
-        // PM channels report 0xFFFF when no data is available (e.g. before the
-        // first sample); map it to `None` like the 0x7FFF sentinels below.
-        let pm = |raw: u16| match raw {
-            0xFFFF => None,
-            value => Some(value as f32 / 10.0),
-        };
-
-        let pm1_0 = pm(words[0]);
-        let pm2_5 = pm(words[1]);
-        let pm4_0 = pm(words[2]);
-        let pm10_0 = pm(words[3]);
-
-        let humidity_raw = words[4] as i16;
-        let temperature_raw = words[5] as i16;
-        let voc_raw = words[6] as i16;
-        let nox_raw = words[7] as i16;
-
-        let humidity = match humidity_raw {
-            0x7FFF => None,
-            value => Some(value as f32 / 100.0),
-        };
-
-        let temperature = match temperature_raw {
-            0x7FFF => None,
-            value => Some(value as f32 / 200.0),
-        };
-
-        let voc_index = match voc_raw {
-            0x7FFF => None,
-            value => Some(value as f32 / 10.0),
-        };
-
-        let nox_index = match nox_raw {
-            0x7FFF => None,
-            value => Some(value as f32 / 10.0),
-        };
-
         Ok(Sen5xMeasurements {
-            pm1_0,
-            pm2_5,
-            pm4_0,
-            pm10_0,
-            humidity,
-            temperature,
-            voc_index,
-            nox_index,
+            pm1_0: pm_reading(words[0]),
+            pm2_5: pm_reading(words[1]),
+            pm4_0: pm_reading(words[2]),
+            pm10_0: pm_reading(words[3]),
+            humidity: humidity_reading(words[4] as i16),
+            temperature: temperature_reading(words[5] as i16),
+            voc_index: index_reading(words[6] as i16),
+            nox_index: index_reading(words[7] as i16),
         })
     }
 

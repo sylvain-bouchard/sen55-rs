@@ -2,6 +2,8 @@
 
 pub mod ffi;
 
+use sen5x_conversion::{humidity_reading, index_reading, pm_reading, temperature_reading};
+
 /// Custom error type wrapping the raw C status return values
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Sen5xError {
@@ -81,6 +83,10 @@ impl Sen5xDriver {
 
     /// Fetches the latest metrics snapshot and automatically converts raw
     /// fixed-point C integer scalings into floating point types.
+    ///
+    /// The sentinel checks and scale factors come from `sen5x-conversion`,
+    /// the same single source of truth the pure Rust driver uses, so the two
+    /// implementations cannot drift on this logic.
     pub fn read_measurements(&mut self) -> Result<SensorReadings, Sen5xError> {
         let mut raw_pm1_0 = 0u16;
         let mut raw_pm2_5 = 0u16;
@@ -108,60 +114,24 @@ impl Sen5xDriver {
             return Err(Sen5xError::DriverError(rc));
         }
 
-        // Sensirion internal C driver defaults unmeasured/unavailable entries
-        // to `0x7FFF` (transposed to 32767) for invalid fields.
-        let is_invalid = |val: i16| val == 32767;
-
-        // PM channels report 0xFFFF when no data is available (e.g. before the
-        // first sample, or measurement not running).
-        let is_pm_invalid = |val: u16| val == 0xFFFF;
-
+        // The 0xFFFF (PM) / 0x7FFF (environmental) "no data" sentinels and the
+        // /10, /100, /200 scale factors live in sen5x-conversion — the same
+        // crate the pure Rust driver uses — so both drivers share one
+        // definition and cannot drift.
         Ok(SensorReadings {
             // PM values arrive scaled by 10 (e.g. 125 = 12.5 µg/m³).
-            pm1_0: if is_pm_invalid(raw_pm1_0) {
-                None
-            } else {
-                Some((raw_pm1_0 as f32) / 10.0)
-            },
-            pm2_5: if is_pm_invalid(raw_pm2_5) {
-                None
-            } else {
-                Some((raw_pm2_5 as f32) / 10.0)
-            },
-            pm4_0: if is_pm_invalid(raw_pm4_0) {
-                None
-            } else {
-                Some((raw_pm4_0 as f32) / 10.0)
-            },
-            pm10_0: if is_pm_invalid(raw_pm10_0) {
-                None
-            } else {
-                Some((raw_pm10_0 as f32) / 10.0)
-            },
+            pm1_0: pm_reading(raw_pm1_0),
+            pm2_5: pm_reading(raw_pm2_5),
+            pm4_0: pm_reading(raw_pm4_0),
+            pm10_0: pm_reading(raw_pm10_0),
 
             // Environmental data scales by 100 (humidity) and 200 (temperature)
-            humidity: if is_invalid(raw_humidity) {
-                None
-            } else {
-                Some((raw_humidity as f32) / 100.0)
-            },
-            temperature: if is_invalid(raw_temperature) {
-                None
-            } else {
-                Some((raw_temperature as f32) / 200.0)
-            },
+            humidity: humidity_reading(raw_humidity),
+            temperature: temperature_reading(raw_temperature),
 
             // Indices scale by 10
-            voc_index: if is_invalid(raw_voc) {
-                None
-            } else {
-                Some((raw_voc as f32) / 10.0)
-            },
-            nox_index: if is_invalid(raw_nox) {
-                None
-            } else {
-                Some((raw_nox as f32) / 10.0)
-            },
+            voc_index: index_reading(raw_voc),
+            nox_index: index_reading(raw_nox),
         })
     }
 }

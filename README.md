@@ -37,6 +37,9 @@ The SEN5x family provides measurements for:
 ```
 sen55-rust/
 |
+├── sen5x-conversion/
+│   └── Shared sentinel + scale-factor logic (single source of truth)
+│
 ├── sen5x-rs/
 │   └── Pure Rust embedded driver
 │

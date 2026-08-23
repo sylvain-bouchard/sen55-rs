@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "sen5x-conversion",
     "sen5x-rs",
     "sen5x-c-wrapper",
 ]
