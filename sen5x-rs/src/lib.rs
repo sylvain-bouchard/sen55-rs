@@ -36,7 +36,6 @@ fn crc8(data: &[u8]) -> u8 {
 pub enum Sen5xError<E> {
     I2c(E),
     Crc,
-    InvalidData,
 }
 
 impl<E> From<E> for Sen5xError<E> {
