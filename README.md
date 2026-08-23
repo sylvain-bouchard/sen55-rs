@@ -72,16 +72,21 @@ Example platforms:
 ```rust
 use sen5x_rs::Sen5xDriver;
 
-let mut sensor = Sen5xDriver::new(i2c);
+// `i2c` and `delay` come from your platform's `embedded-hal-async` support.
+// On Embassy, `embassy_time::Delay` implements the required `DelayNs` trait.
+let mut sensor = Sen5xDriver::new(i2c, delay);
 
-sensor.start_measurement()?;
+// All driver methods are async; run this from an async context that
+// returns a `Result` (e.g. `async fn main() -> Result<(), ...>`).
+sensor.start_measurement().await?;
 
-let measurements = sensor.read_measurements()?;
+let measurements = sensor.read_measurements().await?;
 
-defmt::info!(
-    "PM2.5: {} µg/m³",
-    measurements.pm2_5
-);
+// Each field is `Option<f32>`: PM values are in µg/m³, and `None` means the
+// channel has no data yet (e.g. PM before the first sample, NOx on a SEN54).
+if let Some(pm2_5) = measurements.pm2_5 {
+    // use the PM2.5 concentration in µg/m³
+}
 ```
 
 ## Measurement Conversion
@@ -191,16 +196,16 @@ Run normal tests:
 cargo test
 ```
 
-Run tests using the mock HAL:
+Run tests using the mock HAL (all workspace crates):
 
 ```bash
-cargo test --features mock
+cargo test --workspace --features mock
 ```
 
 For tests that share the global C mock state:
 
 ```bash
-cargo test --features mock -- --test-threads=1
+cargo test --workspace --features mock -- --test-threads=1
 ```
 
 ## Current Status
@@ -226,7 +231,6 @@ Possible improvements:
 - Add hardware integration tests
 - Add examples for popular embedded platforms
 - Improve error diagnostics
-- Support asynchronous embedded-hal drivers
 
 ## License
 
