@@ -41,6 +41,10 @@ unsafe extern "C" {
         typical_particle_size: &mut u16,
     ) -> i16;
 
+    pub fn sen5x_get_product_name(product_name: *mut u8, product_name_size: u8) -> i16;
+
+    pub fn sen5x_get_serial_number(serial_number: *mut u8, serial_number_size: u8) -> i16;
+
     pub fn sen5x_get_version(
         firmware_major: &mut u8,
         firmware_minor: &mut u8,
@@ -52,6 +56,8 @@ unsafe extern "C" {
     ) -> i16;
 
     pub fn sen5x_read_and_clear_device_status(device_status: &mut u32) -> i16;
+
+    pub fn sen5x_read_device_status(device_status: &mut u32) -> i16;
 
     pub fn sen5x_start_fan_cleaning() -> i16;
 

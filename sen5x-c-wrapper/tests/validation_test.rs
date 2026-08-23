@@ -138,6 +138,26 @@ fn fan_interval_payload(interval: u32) -> Vec<u8> {
     payload
 }
 
+/// Builds the 3-byte wire response of the 0x0202 read-data-ready command.
+///
+/// The C driver assigns the raw second data byte to its output
+/// (`*data_ready = buffer[1]`), so any nonzero LSB reports "ready".
+fn data_ready_payload(lsb: u8) -> Vec<u8> {
+    let mut payload = Vec::new();
+    word(lsb as u16, &mut payload);
+    payload
+}
+
+/// Builds the 48-byte wire response of the 0xD014/0xD033 string commands:
+/// 32 data bytes packed as 16 CRC-protected words.
+fn string_payload(bytes: [u8; 32]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for chunk in bytes.chunks_exact(2) {
+        word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut payload);
+    }
+    payload
+}
+
 fn generate_corrupted_payload() -> Vec<u8> {
     let mut response = generate_mock_payload();
 
@@ -1085,6 +1105,179 @@ fn differential_test_get_fan_auto_cleaning_interval() {
 #[test]
 #[cfg(feature = "mock")]
 #[serial]
+fn differential_test_device_reset() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_device_reset() },
+        |driver| {
+            pollster::block_on(driver.device_reset()).expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(frame, vec![0xD3, 0x04]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_start_measurement() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_start_measurement() },
+        |driver| {
+            pollster::block_on(driver.start_measurement()).expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(frame, vec![0x00, 0x21]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_stop_measurement() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_stop_measurement() },
+        |driver| {
+            pollster::block_on(driver.stop_measurement()).expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(frame, vec![0x01, 0x04]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_read_data_ready() {
+    // The C driver assigns the raw second data byte to the bool
+    // (`*data_ready = buffer[1]`), so any nonzero value reports ready — not
+    // just exactly 1. Both drivers must agree on that semantics.
+    for lsb in [0u8, 1, 2, 0xFF] {
+        let (c, rust) = run_c_and_rust(
+            data_ready_payload(lsb),
+            || {
+                let mut data_ready = false;
+                let rc = unsafe { sen5x_rust::ffi::sen5x_read_data_ready(&mut data_ready) };
+                assert_eq!(rc, 0, "C reference failed to read data ready");
+                data_ready
+            },
+            |payload| {
+                pollster::block_on(async {
+                    let mut driver =
+                        PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                    driver
+                        .read_data_ready_response()
+                        .await
+                        .expect("pure Rust driver failed")
+                })
+            },
+        );
+        assert_eq!(c, rust, "data-ready diverges between drivers for lsb={lsb:#04x}");
+        assert_eq!(rust, lsb != 0, "data-ready value wrong for lsb={lsb:#04x}");
+    }
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_product_name() {
+    let mut name = [0u8; 32];
+    name[..13].copy_from_slice(b"SEN5x-1234567");
+
+    let (c, rust) = run_c_and_rust(
+        string_payload(name),
+        || {
+            let mut out = [0u8; 32];
+            let rc = unsafe { sen5x_rust::ffi::sen5x_get_product_name(out.as_mut_ptr(), 32) };
+            assert_eq!(rc, 0, "C reference failed to read product name");
+            out
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .read_product_name()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+
+    let rust_str = rust.as_str().expect("product name must be UTF-8");
+    assert_eq!(
+        &c[..rust_str.len()],
+        rust_str.as_bytes(),
+        "product name diverges between drivers"
+    );
+    assert_eq!(rust_str, "SEN5x-1234567");
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_serial_number() {
+    let mut serial = [0u8; 32];
+    serial[..16].copy_from_slice(b"SEN5X12345678901");
+
+    let (c, rust) = run_c_and_rust(
+        string_payload(serial),
+        || {
+            let mut out = [0u8; 32];
+            let rc = unsafe { sen5x_rust::ffi::sen5x_get_serial_number(out.as_mut_ptr(), 32) };
+            assert_eq!(rc, 0, "C reference failed to read serial number");
+            out
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .read_serial_number()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+
+    let rust_str = rust.as_str().expect("serial number must be UTF-8");
+    assert_eq!(
+        &c[..rust_str.len()],
+        rust_str.as_bytes(),
+        "serial number diverges between drivers"
+    );
+    assert_eq!(rust_str, "SEN5X12345678901");
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_read_device_status() {
+    // 0xD206 differs from 0xD210 only in that it does not clear the flags;
+    // the wire format (two words → 32-bit status) is identical.
+    let (c, rust) = run_c_and_rust(
+        device_status_payload(0x0001_0203),
+        || {
+            let mut status = 0u32;
+            let rc = unsafe { sen5x_rust::ffi::sen5x_read_device_status(&mut status) };
+            assert_eq!(rc, 0, "C reference failed to read status");
+            status
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .read_device_status()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+
+    assert_eq!(c, rust, "device status diverges between drivers");
+    assert_eq!(rust, 0x0001_0203);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
 fn verify_c_reference_rejects_bad_crc() {
     let response = generate_corrupted_payload();
 
@@ -1120,5 +1313,63 @@ fn verify_c_reference_rejects_bad_crc() {
     assert_ne!(
         error, 0,
         "C reference driver unexpectedly accepted corrupted CRC"
+    );
+}
+
+/// Coverage guard: every `sen5x_*` command declared by the C reference header
+/// must be exposed through the wrapper's FFI and exercised by at least one
+/// differential test. Adding a new command to the reference driver therefore
+/// fails CI until it is ported and verified — "feature complete" is enforced
+/// mechanically instead of by claim.
+#[test]
+fn coverage_guard_commands_are_ffi_exposed_and_differentially_tested() {
+    // Deliberately not ported: sen5x_read_measured_values_sen50 is a C-side
+    // convenience wrapper that just discards the environmental fields of the
+    // 0x03C4 response; pure Rust callers already get the equivalent by
+    // ignoring the fields they don't need. It is not a distinct wire command.
+    const SKIPPED: &[&str] = &["sen5x_read_measured_values_sen50"];
+
+    let root = env!("CARGO_MANIFEST_DIR");
+    let header =
+        std::fs::read_to_string(format!("{root}/hal/esp-idf/sen5x_i2c.h")).expect("header");
+    let ffi = std::fs::read_to_string(format!("{root}/src/ffi.rs")).expect("ffi.rs");
+    let tests = std::fs::read_to_string(format!("{root}/tests/validation_test.rs"))
+        .expect("validation_test.rs");
+
+    let symbols: Vec<String> = header
+        .lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix("int16_t ")?;
+            let name = rest.split(['(', ' ']).next()?;
+            name.starts_with("sen5x_").then(|| name.to_string())
+        })
+        .collect();
+
+    assert!(!symbols.is_empty(), "parsed no sen5x_* symbols from header");
+
+    let ported: Vec<&str> = symbols
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|s| !SKIPPED.contains(s))
+        .collect();
+
+    let missing_ffi: Vec<&str> = ported
+        .iter()
+        .copied()
+        .filter(|s| !ffi.contains(&format!("pub fn {s}(")))
+        .collect();
+    assert!(
+        missing_ffi.is_empty(),
+        "commands lacking an FFI declaration in ffi.rs: {missing_ffi:?}"
+    );
+
+    let missing_test: Vec<&str> = ported
+        .iter()
+        .copied()
+        .filter(|s| !tests.contains(&format!("sen5x_rust::ffi::{s}(")))
+        .collect();
+    assert!(
+        missing_test.is_empty(),
+        "commands lacking a differential test in validation_test.rs: {missing_test:?}"
     );
 }

@@ -239,10 +239,14 @@ where
 
     /// Polls the data-ready flag by sending the 0x0202 command, waiting the
     /// datasheet-mandated 20 ms, then reading back the 3-byte status packet.
+    ///
+    /// Mirrors the reference C driver, which assigns the raw second data byte
+    /// to the output (`*data_ready = buffer[1]`): any nonzero value reports
+    /// ready, not just exactly 1.
     pub async fn read_data_ready_response(&mut self) -> Result<bool, Sen5xError<E>> {
         let data = self.read_bytes::<2>([0x02, 0x02], DELAY_20MS_US).await?;
 
-        Ok(data[1] == 1)
+        Ok(data[1] != 0)
     }
 
     /// Reads out the 24-byte data block containing air metrics and converts
