@@ -23,6 +23,9 @@ cc = "1.0"
 # Used for mocking or verifying floating point comparisons in your test blocks
 approx = "0.5"
 serial_test = "4"
+# The pure Rust driver under differential test, plus a block_on executor for its async API
+sen5x-rs = { path = "../sen5x-rs" }
+pollster = "0.4"
 
 [features]
 default = []
