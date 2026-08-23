@@ -207,6 +207,125 @@ fn read_measurements_rejects_corrupted_crc() {
 }
 
 #[test]
+fn read_measured_raw_values_parses_unscaled_ticks() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        word(5000u16, &mut payload); // raw humidity
+        word(4000u16, &mut payload); // raw temperature
+        word(150u16, &mut payload); // raw VOC
+        word(20u16, &mut payload); // raw NOx
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+
+        let raw = driver
+            .read_measured_raw_values()
+            .await
+            .expect("read_measured_raw_values failed");
+        assert_eq!(raw.humidity, 5000);
+        assert_eq!(raw.temperature, 4000);
+        assert_eq!(raw.voc, 150);
+        assert_eq!(raw.nox, 20);
+
+        driver.destroy()
+    });
+
+    // Raw values are 4 words = 12 wire bytes.
+    assert_eq!(i2c.commands, vec![vec![0x03, 0xD2]]);
+    assert_eq!(i2c.offset, 12);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn read_measured_pm_values_parses_all_words() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        for value in [100u16, 250, 400, 1000, 50, 120, 300, 500, 900, 3200] {
+            word(value, &mut payload);
+        }
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+
+        let pm = driver
+            .read_measured_pm_values()
+            .await
+            .expect("read_measured_pm_values failed");
+        assert_eq!(pm.mass_pm1_0, 100);
+        assert_eq!(pm.mass_pm2_5, 250);
+        assert_eq!(pm.mass_pm4_0, 400);
+        assert_eq!(pm.mass_pm10_0, 1000);
+        assert_eq!(pm.number_pm0_5, 50);
+        assert_eq!(pm.number_pm1_0, 120);
+        assert_eq!(pm.number_pm2_5, 300);
+        assert_eq!(pm.number_pm4_0, 500);
+        assert_eq!(pm.number_pm10_0, 900);
+        assert_eq!(pm.typical_particle_size, 3200);
+
+        driver.destroy()
+    });
+
+    // The extended PM block is 10 words = 30 wire bytes.
+    assert_eq!(i2c.commands, vec![vec![0x04, 0x13]]);
+    assert_eq!(i2c.offset, 30);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn get_version_parses_all_fields() {
+    let (i2c, delay) = pollster::block_on(async {
+        // Four words; the first seven data bytes carry the version fields.
+        let mut payload = Vec::new();
+        word(0x0102, &mut payload); // firmware 1.2
+        word(0x0003, &mut payload); // debug off, hardware 3
+        word(0x0004, &mut payload); // hardware minor 0, protocol 4
+        word(0x0500, &mut payload); // protocol 5, unused byte
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+
+        let version = driver
+            .get_version()
+            .await
+            .expect("get_version failed");
+        assert_eq!(version.firmware_major, 1);
+        assert_eq!(version.firmware_minor, 2);
+        assert!(!version.firmware_debug);
+        assert_eq!(version.hardware_major, 3);
+        assert_eq!(version.hardware_minor, 0);
+        assert_eq!(version.protocol_major, 4);
+        assert_eq!(version.protocol_minor, 5);
+
+        driver.destroy()
+    });
+
+    // Mirrors the reference C driver, which reads 4 words = 12 wire bytes.
+    assert_eq!(i2c.commands, vec![vec![0xD1, 0x00]]);
+    assert_eq!(i2c.offset, 12);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn read_and_clear_device_status_returns_full_u32() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        word(0x0001, &mut payload);
+        word(0x0203, &mut payload);
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+
+        let status = driver
+            .read_and_clear_device_status()
+            .await
+            .expect("read_and_clear_device_status failed");
+        assert_eq!(status, 0x0001_0203);
+
+        driver.destroy()
+    });
+
+    assert_eq!(i2c.commands, vec![vec![0xD2, 0x10]]);
+    assert_eq!(i2c.offset, 6);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
 fn read_device_status_returns_full_u32() {
     let (i2c, delay) = pollster::block_on(async {
         let mut payload = Vec::new();

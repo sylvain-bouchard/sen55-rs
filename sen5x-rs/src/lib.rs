@@ -67,6 +67,47 @@ pub struct Sen5xMeasurements {
     pub nox_index: Option<f32>,
 }
 
+/// Raw (unscaled) ticks from the 0x03D2 command: humidity (÷ 100 for %RH)
+/// and temperature (÷ 200 for °C) share the ambient scale factors; VOC and
+/// NOx have no scale factor.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Sen5xRawMeasurements {
+    pub humidity: i16,
+    pub temperature: i16,
+    pub voc: u16,
+    pub nox: u16,
+}
+
+/// Extended PM block from the 0x0413 command. The `mass_pm*` fields are mass
+/// concentrations (÷ 10 for µg/m³); the `number_pm*` fields are number
+/// concentrations and `typical_particle_size` is unscaled. All values are
+/// the raw fixed-point words the sensor emits.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Sen5xPmMeasurements {
+    pub mass_pm1_0: u16,
+    pub mass_pm2_5: u16,
+    pub mass_pm4_0: u16,
+    pub mass_pm10_0: u16,
+    pub number_pm0_5: u16,
+    pub number_pm1_0: u16,
+    pub number_pm2_5: u16,
+    pub number_pm4_0: u16,
+    pub number_pm10_0: u16,
+    pub typical_particle_size: u16,
+}
+
+/// Firmware, hardware and protocol version from the 0xD100 command.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Sen5xVersion {
+    pub firmware_major: u8,
+    pub firmware_minor: u8,
+    pub firmware_debug: bool,
+    pub hardware_major: u8,
+    pub hardware_minor: u8,
+    pub protocol_major: u8,
+    pub protocol_minor: u8,
+}
+
 pub struct Sen5xDriver<I2C, D> {
     i2c: I2C,
     delay: D,
@@ -211,6 +252,82 @@ where
             voc_index,
             nox_index,
         })
+    }
+
+    /// Reads the raw, unscaled humidity, temperature, VOC and NOx ticks.
+    ///
+    /// Raw humidity and temperature share the ambient scale factors
+    /// (÷ 100 for RH%, ÷ 200 for °C); raw VOC and NOx are plain ticks with
+    /// no documented scale factor.
+    pub async fn read_measured_raw_values(
+        &mut self,
+    ) -> Result<Sen5xRawMeasurements, Sen5xError<E>> {
+        let words = self.read_words::<4>([0x03, 0xD2], DELAY_20MS_US).await?;
+
+        Ok(Sen5xRawMeasurements {
+            humidity: words[0] as i16,
+            temperature: words[1] as i16,
+            voc: words[2],
+            nox: words[3],
+        })
+    }
+
+    /// Reads the extended PM block: mass concentrations (÷ 10 for µg/m³),
+    /// number concentrations and typical particle size, all as raw words.
+    pub async fn read_measured_pm_values(
+        &mut self,
+    ) -> Result<Sen5xPmMeasurements, Sen5xError<E>> {
+        let words = self.read_words::<10>([0x04, 0x13], DELAY_20MS_US).await?;
+
+        Ok(Sen5xPmMeasurements {
+            mass_pm1_0: words[0],
+            mass_pm2_5: words[1],
+            mass_pm4_0: words[2],
+            mass_pm10_0: words[3],
+            number_pm0_5: words[4],
+            number_pm1_0: words[5],
+            number_pm2_5: words[6],
+            number_pm4_0: words[7],
+            number_pm10_0: words[8],
+            typical_particle_size: words[9],
+        })
+    }
+
+    /// Reads the firmware, hardware and protocol version.
+    ///
+    /// Mirrors the reference C driver, which clocks out four words (12 wire
+    /// bytes) for this command and uses the first seven data bytes; the
+    /// protocol minor version is the low byte of the fourth word.
+    pub async fn get_version(&mut self) -> Result<Sen5xVersion, Sen5xError<E>> {
+        let words = self.read_words::<4>([0xD1, 0x00], DELAY_20MS_US).await?;
+
+        let byte = |index: usize| {
+            let word = words[index / 2];
+            if index % 2 == 0 {
+                (word >> 8) as u8
+            } else {
+                (word & 0xFF) as u8
+            }
+        };
+
+        Ok(Sen5xVersion {
+            firmware_major: byte(0),
+            firmware_minor: byte(1),
+            firmware_debug: byte(2) != 0,
+            hardware_major: byte(3),
+            hardware_minor: byte(4),
+            protocol_major: byte(5),
+            protocol_minor: byte(6),
+        })
+    }
+
+    /// Reads and clears the 32-bit device status register, like
+    /// [`read_device_status`](Self::read_device_status) but resetting the
+    /// flags after the read.
+    pub async fn read_and_clear_device_status(&mut self) -> Result<u32, Sen5xError<E>> {
+        let words = self.read_words::<2>([0xD2, 0x10], DELAY_20MS_US).await?;
+
+        Ok(((words[0] as u32) << 16) | words[1] as u32)
     }
 
     async fn write_command(&mut self, command: [u8; 2]) -> Result<(), Sen5xError<E>> {
