@@ -1,4 +1,3 @@
-use crc8::Crc8;
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::i2c::{Error as I2cError, ErrorKind, ErrorType, I2c, Operation};
 use sen5x_rs::{Sen5xDriver, Sen5xError};
@@ -73,8 +72,18 @@ impl DelayNs for MockDelay {
 }
 
 fn crc8_of(data: &[u8]) -> u8 {
-    let mut engine = Crc8::create_msb(49);
-    engine.calc(data, data.len() as i32, 0xFF)
+    let mut crc: u8 = 0xFF;
+    for &byte in data {
+        crc ^= byte;
+        for _ in 0..8 {
+            if crc & 0x80 != 0 {
+                crc = (crc << 1) ^ 0x31;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    crc
 }
 
 /// Appends one 2-byte word plus its CRC byte to the response payload.

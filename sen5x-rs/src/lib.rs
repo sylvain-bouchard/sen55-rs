@@ -1,11 +1,9 @@
 #![no_std]
 
-use crc8::Crc8;
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::i2c::I2c;
 
 const SEN5X_I2C_ADDRESS: u8 = 0x69;
-const CRC_INIT: u8 = 0xFF;
 const MAX_RESPONSE_WORDS: usize = 16;
 
 // Datasheet-mandated response preparation times (mirrored from the reference
@@ -14,6 +12,25 @@ const MAX_RESPONSE_WORDS: usize = 16;
 const DELAY_20MS_US: u32 = 20_000;
 const DELAY_50MS_US: u32 = 50_000;
 const DELAY_200MS_US: u32 = 200_000;
+
+/// Sensirion CRC-8: polynomial 0x31, MSB-first, init 0xFF.
+///
+/// Inlined here so the crate stays `no_std`; the `crc8` crate does not
+/// declare `#![no_std]`.
+fn crc8(data: &[u8]) -> u8 {
+    let mut crc: u8 = 0xFF;
+    for &byte in data {
+        crc ^= byte;
+        for _ in 0..8 {
+            if crc & 0x80 != 0 {
+                crc = (crc << 1) ^ 0x31;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    crc
+}
 
 #[derive(Debug)]
 pub enum Sen5xError<E> {
@@ -111,7 +128,6 @@ pub struct Sen5xVersion {
 pub struct Sen5xDriver<I2C, D> {
     i2c: I2C,
     delay: D,
-    crc: Crc8,
 }
 
 impl<I2C, D, E> Sen5xDriver<I2C, D>
@@ -128,11 +144,7 @@ where
     /// method) that awaits `Timer::after_micros`; `delay_us`/`delay_ms` are
     /// provided by the trait.
     pub fn new(i2c: I2C, delay: D) -> Self {
-        Self {
-            i2c,
-            delay,
-            crc: Crc8::create_msb(49),
-        }
+        Self { i2c, delay }
     }
 
     pub fn destroy(self) -> (I2C, D) {
@@ -336,10 +348,8 @@ where
         Ok(())
     }
 
-    fn check_crc(&mut self, data: &[u8], expected_crc: u8) -> Result<(), Sen5xError<E>> {
-        let calculated_crc = self.crc.calc(data, data.len() as i32, CRC_INIT);
-
-        if calculated_crc != expected_crc {
+    fn check_crc(&self, data: &[u8], expected_crc: u8) -> Result<(), Sen5xError<E>> {
+        if crc8(data) != expected_crc {
             Err(Sen5xError::Crc)
         } else {
             Ok(())
