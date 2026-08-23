@@ -214,7 +214,13 @@ Implemented:
 - Start measurement command
 - Stop measurement command
 - Data ready command
-- Measurement read command
+- Measurement read command (measured values, raw values, extended PM block)
+- Device status read and read-and-clear
+- Product name and serial number
+- Version read
+- Configuration commands: temperature offset, warm start, VOC/NOx algorithm
+  tuning, RH/T acceleration mode, VOC algorithm state, fan cleaning
+  (manual start and auto-cleaning interval)
 - CRC validation
 - Fixed-point conversion
 - Invalid value handling
@@ -224,7 +230,6 @@ Implemented:
 
 Possible improvements:
 
-- Add remaining SEN5x commands
 - Add more exhaustive protocol tests
 - Add hardware integration tests
 - Add examples for popular embedded platforms

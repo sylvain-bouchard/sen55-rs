@@ -518,3 +518,264 @@ fn request_data_ready_and_write_only_commands_send_expected_bytes() {
     // driver's 200 ms / 50 ms / 200 ms recovery times.
     assert_eq!(delay.calls_us, vec![200_000, 50_000, 200_000]);
 }
+
+/// Builds the exact write frame (command + words + CRCs) the driver should
+/// emit for a set command, mirroring the reference C driver's buffer layout.
+fn set_frame(command: [u8; 2], words: &[u16]) -> Vec<u8> {
+    let mut frame = vec![command[0], command[1]];
+    for &w in words {
+        word(w, &mut frame);
+    }
+    frame
+}
+
+#[test]
+fn start_fan_cleaning_sends_command() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver.start_fan_cleaning().await.unwrap();
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x56, 0x07]]);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn set_and_get_temperature_offset_parameters() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver
+            .set_temperature_offset_parameters(-100, 50, 300)
+            .await
+            .unwrap();
+        driver.destroy()
+    });
+    assert_eq!(
+        i2c.commands,
+        vec![set_frame([0x60, 0xB2], &[(-100i16) as u16, 50, 300])]
+    );
+    assert_eq!(delay.calls_us, vec![20_000]);
+
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        word((-100i16) as u16, &mut payload);
+        word(50u16, &mut payload);
+        word(300u16, &mut payload);
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        let params = driver
+            .get_temperature_offset_parameters()
+            .await
+            .unwrap();
+        assert_eq!(params.temp_offset, -100);
+        assert_eq!(params.slope, 50);
+        assert_eq!(params.time_constant, 300);
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x60, 0xB2]]);
+    assert_eq!(i2c.offset, 9);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn set_and_get_warm_start_parameter() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver.set_warm_start_parameter(3333).await.unwrap();
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![set_frame([0x60, 0xC6], &[3333])]);
+    assert_eq!(delay.calls_us, vec![20_000]);
+
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        word(3333u16, &mut payload);
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        assert_eq!(driver.get_warm_start_parameter().await.unwrap(), 3333);
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x60, 0xC6]]);
+    assert_eq!(i2c.offset, 3);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+fn tuning_params() -> sen5x_rs::TuningParameters {
+    sen5x_rs::TuningParameters {
+        index_offset: -100,
+        learning_time_offset_hours: 12,
+        learning_time_gain_hours: 24,
+        gating_max_duration_minutes: 180,
+        std_initial: 50,
+        gain_factor: 230,
+    }
+}
+
+fn tuning_words(params: &sen5x_rs::TuningParameters) -> [u16; 6] {
+    [
+        params.index_offset as u16,
+        params.learning_time_offset_hours as u16,
+        params.learning_time_gain_hours as u16,
+        params.gating_max_duration_minutes as u16,
+        params.std_initial as u16,
+        params.gain_factor as u16,
+    ]
+}
+
+#[test]
+fn set_and_get_voc_algorithm_tuning_parameters() {
+    let params = tuning_params();
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver
+            .set_voc_algorithm_tuning_parameters(params)
+            .await
+            .unwrap();
+        driver.destroy()
+    });
+    assert_eq!(
+        i2c.commands,
+        vec![set_frame([0x60, 0xD0], &tuning_words(&params))]
+    );
+    assert_eq!(delay.calls_us, vec![20_000]);
+
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        for &w in &tuning_words(&params) {
+            word(w, &mut payload);
+        }
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        assert_eq!(driver.get_voc_algorithm_tuning_parameters().await.unwrap(), params);
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x60, 0xD0]]);
+    assert_eq!(i2c.offset, 18);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn set_and_get_nox_algorithm_tuning_parameters() {
+    let params = tuning_params();
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver
+            .set_nox_algorithm_tuning_parameters(params)
+            .await
+            .unwrap();
+        driver.destroy()
+    });
+    assert_eq!(
+        i2c.commands,
+        vec![set_frame([0x60, 0xE1], &tuning_words(&params))]
+    );
+    assert_eq!(delay.calls_us, vec![20_000]);
+
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        for &w in &tuning_words(&params) {
+            word(w, &mut payload);
+        }
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        assert_eq!(driver.get_nox_algorithm_tuning_parameters().await.unwrap(), params);
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x60, 0xE1]]);
+    assert_eq!(i2c.offset, 18);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn set_and_get_rht_acceleration_mode() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver.set_rht_acceleration_mode(2).await.unwrap();
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![set_frame([0x60, 0xF7], &[2])]);
+    assert_eq!(delay.calls_us, vec![20_000]);
+
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        word(2u16, &mut payload);
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        assert_eq!(driver.get_rht_acceleration_mode().await.unwrap(), 2);
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x60, 0xF7]]);
+    assert_eq!(i2c.offset, 3);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn set_and_get_voc_algorithm_state() {
+    let state = [0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04];
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver.set_voc_algorithm_state(&state).await.unwrap();
+        driver.destroy()
+    });
+    let mut expected = vec![0x61, 0x81];
+    for chunk in state.chunks_exact(2) {
+        word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut expected);
+    }
+    assert_eq!(i2c.commands, vec![expected]);
+    assert_eq!(delay.calls_us, vec![20_000]);
+
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        for chunk in state.chunks_exact(2) {
+            word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut payload);
+        }
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        assert_eq!(driver.get_voc_algorithm_state().await.unwrap(), state);
+        driver.destroy()
+    });
+    // Mirrors the reference C driver, which reads 4 words = 12 wire bytes.
+    assert_eq!(i2c.commands, vec![vec![0x61, 0x81]]);
+    assert_eq!(i2c.offset, 12);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}
+
+#[test]
+fn set_voc_algorithm_state_rejects_odd_length() {
+    let result = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver.set_voc_algorithm_state(&[1, 2, 3]).await
+    });
+    assert!(matches!(result, Err(Sen5xError::InvalidArgument)));
+}
+
+#[test]
+fn set_and_get_fan_auto_cleaning_interval() {
+    let interval = 0x0102_0304u32;
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver
+            .set_fan_auto_cleaning_interval(interval)
+            .await
+            .unwrap();
+        driver.destroy()
+    });
+    assert_eq!(
+        i2c.commands,
+        vec![set_frame([0x80, 0x04], &[(interval >> 16) as u16, interval as u16])]
+    );
+    assert_eq!(delay.calls_us, vec![20_000]);
+
+    let (i2c, delay) = pollster::block_on(async {
+        let mut payload = Vec::new();
+        word((interval >> 16) as u16, &mut payload);
+        word(interval as u16, &mut payload);
+
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
+        assert_eq!(driver.get_fan_auto_cleaning_interval().await.unwrap(), interval);
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x80, 0x04]]);
+    assert_eq!(i2c.offset, 6);
+    assert_eq!(delay.calls_us, vec![20_000]);
+}

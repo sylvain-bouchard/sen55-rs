@@ -85,6 +85,59 @@ fn device_status_payload(status: u32) -> Vec<u8> {
     payload
 }
 
+/// Builds the 9-byte wire response of the 0x60B2 get-temperature-offset
+/// command (temp offset, slope, time constant).
+fn temp_offset_payload(temp_offset: i16, slope: i16, time_constant: u16) -> Vec<u8> {
+    let mut payload = Vec::new();
+    word(temp_offset as u16, &mut payload);
+    word(slope as u16, &mut payload);
+    word(time_constant, &mut payload);
+    payload
+}
+
+/// Builds the 3-byte wire response of the 0x60C6 get-warm-start command.
+fn warm_start_payload(warm_start: u16) -> Vec<u8> {
+    let mut payload = Vec::new();
+    word(warm_start, &mut payload);
+    payload
+}
+
+/// Builds the 18-byte wire response of the 0x60D0/0x60E1 get-tuning-parameters
+/// commands (six signed words).
+fn tuning_payload(values: [i16; 6]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for value in values {
+        word(value as u16, &mut payload);
+    }
+    payload
+}
+
+/// Builds the 3-byte wire response of the 0x60F7 get-RHT-acceleration command.
+fn rht_acceleration_payload(mode: u16) -> Vec<u8> {
+    let mut payload = Vec::new();
+    word(mode, &mut payload);
+    payload
+}
+
+/// Builds the 12-byte wire response of the 0x6181 get-VOC-state command
+/// (four words = eight state bytes).
+fn voc_state_payload(state: [u8; 8]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for chunk in state.chunks_exact(2) {
+        word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut payload);
+    }
+    payload
+}
+
+/// Builds the 6-byte wire response of the 0x8004 get-fan-cleaning-interval
+/// command (two words holding the 32-bit interval).
+fn fan_interval_payload(interval: u32) -> Vec<u8> {
+    let mut payload = Vec::new();
+    word((interval >> 16) as u16, &mut payload);
+    word(interval as u16, &mut payload);
+    payload
+}
+
 fn generate_corrupted_payload() -> Vec<u8> {
     let mut response = generate_mock_payload();
 
@@ -223,11 +276,14 @@ fn verify_crc_failure_is_detected() {
 }
 
 /// An in-memory I2C bus feeding a fixed response payload to the pure Rust
-/// driver, mirroring the mock used in `sen5x-rs`' own test suite.
+/// driver, mirroring the mock used in `sen5x-rs`' own test suite. It also
+/// records every write frame so set-commands can be compared against the
+/// C driver's written bytes.
 #[derive(Debug, Default)]
 struct MockI2c {
     response: Vec<u8>,
     offset: usize,
+    commands: Vec<Vec<u8>>,
 }
 
 impl MockI2c {
@@ -235,6 +291,7 @@ impl MockI2c {
         Self {
             response,
             offset: 0,
+            commands: Vec::new(),
         }
     }
 }
@@ -260,7 +317,7 @@ impl I2c for MockI2c {
     ) -> Result<(), MockError> {
         for operation in operations {
             match operation {
-                Operation::Write(_) => {}
+                Operation::Write(bytes) => self.commands.push(bytes.to_vec()),
                 Operation::Read(buffer) => {
                     let end = self.offset + buffer.len();
                     if end > self.response.len() {
@@ -577,6 +634,438 @@ fn differential_test_read_and_clear_device_status() {
 
     assert_eq!(c, rust, "device status diverges between drivers");
     assert_eq!(rust, 0x0001_0203);
+}
+
+/// Differential guarantee for write-only (set) commands: the exact frame the
+/// C driver puts on the bus (captured by the mock HAL) must be byte-identical
+/// to the frame the pure Rust driver writes.
+#[cfg(feature = "mock")]
+fn assert_c_and_rust_write_frames_agree(
+    c_write: impl FnOnce() -> i16,
+    rust_write: impl FnOnce(&mut PureRustDriver<MockI2c, MockDelay>),
+) -> Vec<u8> {
+    let c_rc = c_write();
+    assert_eq!(c_rc, 0, "C reference write failed");
+
+    let mut c_frame = [0u8; 64];
+    let mut c_len = 0u16;
+    unsafe {
+        sen5x_rust::ffi::sensirion_i2c_hal_mock_get_write_buffer(
+            c_frame.as_mut_ptr(),
+            &mut c_len,
+        );
+    }
+
+    let rust_frame = pollster::block_on(async {
+        let mut driver = PureRustDriver::new(MockI2c::default(), MockDelay);
+        rust_write(&mut driver);
+        let (i2c, _) = driver.destroy();
+        i2c.commands[0].clone()
+    });
+
+    assert_eq!(
+        &c_frame[..c_len as usize],
+        rust_frame.as_slice(),
+        "write frame diverges between drivers"
+    );
+
+    rust_frame
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_start_fan_cleaning() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_start_fan_cleaning() },
+        |driver| {
+            pollster::block_on(driver.start_fan_cleaning()).expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(frame, vec![0x56, 0x07]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_set_temperature_offset_parameters() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_set_temperature_offset_parameters(-100, 50, 300) },
+        |driver| {
+            pollster::block_on(driver.set_temperature_offset_parameters(-100, 50, 300))
+                .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(&frame[..2], &[0x60, 0xB2]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_get_temperature_offset_parameters() {
+    let (c, rust) = run_c_and_rust(
+        temp_offset_payload(-100, 50, 300),
+        || {
+            let mut temp_offset = 0i16;
+            let mut slope = 0i16;
+            let mut time_constant = 0u16;
+            let rc = unsafe {
+                sen5x_rust::ffi::sen5x_get_temperature_offset_parameters(
+                    &mut temp_offset,
+                    &mut slope,
+                    &mut time_constant,
+                )
+            };
+            assert_eq!(rc, 0, "C reference failed to read temp offset");
+            sen5x_rs::TemperatureOffsetParameters {
+                temp_offset,
+                slope,
+                time_constant,
+            }
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .get_temperature_offset_parameters()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+    assert_eq!(c, rust, "temperature offset diverges between drivers");
+    assert_eq!(rust.temp_offset, -100);
+    assert_eq!(rust.time_constant, 300);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_set_warm_start_parameter() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_set_warm_start_parameter(3333) },
+        |driver| {
+            pollster::block_on(driver.set_warm_start_parameter(3333))
+                .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(&frame[..2], &[0x60, 0xC6]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_get_warm_start_parameter() {
+    let (c, rust) = run_c_and_rust(
+        warm_start_payload(3333),
+        || {
+            let mut warm_start = 0u16;
+            let rc = unsafe { sen5x_rust::ffi::sen5x_get_warm_start_parameter(&mut warm_start) };
+            assert_eq!(rc, 0, "C reference failed to read warm start");
+            warm_start
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .get_warm_start_parameter()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+    assert_eq!(c, rust, "warm start diverges between drivers");
+    assert_eq!(rust, 3333);
+}
+
+fn tuning_values() -> [i16; 6] {
+    [-100, 12, 24, 180, 50, 230]
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_set_voc_algorithm_tuning_parameters() {
+    let [index_offset, lto, ltg, gating, std_initial, gain] = tuning_values();
+    let frame = assert_c_and_rust_write_frames_agree(
+        || {
+            unsafe {
+                sen5x_rust::ffi::sen5x_set_voc_algorithm_tuning_parameters(
+                    index_offset, lto, ltg, gating, std_initial, gain,
+                )
+            }
+        },
+        |driver| {
+            pollster::block_on(driver.set_voc_algorithm_tuning_parameters(
+                sen5x_rs::TuningParameters {
+                    index_offset,
+                    learning_time_offset_hours: lto,
+                    learning_time_gain_hours: ltg,
+                    gating_max_duration_minutes: gating,
+                    std_initial,
+                    gain_factor: gain,
+                },
+            ))
+            .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(&frame[..2], &[0x60, 0xD0]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_get_voc_algorithm_tuning_parameters() {
+    let values = tuning_values();
+    let (c, rust) = run_c_and_rust(
+        tuning_payload(values),
+        || {
+            let mut index_offset = 0i16;
+            let mut lto = 0i16;
+            let mut ltg = 0i16;
+            let mut gating = 0i16;
+            let mut std_initial = 0i16;
+            let mut gain = 0i16;
+            let rc = unsafe {
+                sen5x_rust::ffi::sen5x_get_voc_algorithm_tuning_parameters(
+                    &mut index_offset, &mut lto, &mut ltg, &mut gating, &mut std_initial,
+                    &mut gain,
+                )
+            };
+            assert_eq!(rc, 0, "C reference failed to read VOC tuning");
+            sen5x_rs::TuningParameters {
+                index_offset,
+                learning_time_offset_hours: lto,
+                learning_time_gain_hours: ltg,
+                gating_max_duration_minutes: gating,
+                std_initial,
+                gain_factor: gain,
+            }
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .get_voc_algorithm_tuning_parameters()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+    assert_eq!(c, rust, "VOC tuning diverges between drivers");
+    assert_eq!(rust.index_offset, -100);
+    assert_eq!(rust.gain_factor, 230);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_set_nox_algorithm_tuning_parameters() {
+    let [index_offset, lto, ltg, gating, std_initial, gain] = tuning_values();
+    let frame = assert_c_and_rust_write_frames_agree(
+        || {
+            unsafe {
+                sen5x_rust::ffi::sen5x_set_nox_algorithm_tuning_parameters(
+                    index_offset, lto, ltg, gating, std_initial, gain,
+                )
+            }
+        },
+        |driver| {
+            pollster::block_on(driver.set_nox_algorithm_tuning_parameters(
+                sen5x_rs::TuningParameters {
+                    index_offset,
+                    learning_time_offset_hours: lto,
+                    learning_time_gain_hours: ltg,
+                    gating_max_duration_minutes: gating,
+                    std_initial,
+                    gain_factor: gain,
+                },
+            ))
+            .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(&frame[..2], &[0x60, 0xE1]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_get_nox_algorithm_tuning_parameters() {
+    let values = tuning_values();
+    let (c, rust) = run_c_and_rust(
+        tuning_payload(values),
+        || {
+            let mut index_offset = 0i16;
+            let mut lto = 0i16;
+            let mut ltg = 0i16;
+            let mut gating = 0i16;
+            let mut std_initial = 0i16;
+            let mut gain = 0i16;
+            let rc = unsafe {
+                sen5x_rust::ffi::sen5x_get_nox_algorithm_tuning_parameters(
+                    &mut index_offset, &mut lto, &mut ltg, &mut gating, &mut std_initial,
+                    &mut gain,
+                )
+            };
+            assert_eq!(rc, 0, "C reference failed to read NOx tuning");
+            sen5x_rs::TuningParameters {
+                index_offset,
+                learning_time_offset_hours: lto,
+                learning_time_gain_hours: ltg,
+                gating_max_duration_minutes: gating,
+                std_initial,
+                gain_factor: gain,
+            }
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .get_nox_algorithm_tuning_parameters()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+    assert_eq!(c, rust, "NOx tuning diverges between drivers");
+    assert_eq!(rust.index_offset, -100);
+    assert_eq!(rust.gain_factor, 230);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_set_rht_acceleration_mode() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_set_rht_acceleration_mode(2) },
+        |driver| {
+            pollster::block_on(driver.set_rht_acceleration_mode(2))
+                .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(&frame[..2], &[0x60, 0xF7]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_get_rht_acceleration_mode() {
+    let (c, rust) = run_c_and_rust(
+        rht_acceleration_payload(2),
+        || {
+            let mut mode = 0u16;
+            let rc = unsafe { sen5x_rust::ffi::sen5x_get_rht_acceleration_mode(&mut mode) };
+            assert_eq!(rc, 0, "C reference failed to read RHT mode");
+            mode
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .get_rht_acceleration_mode()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+    assert_eq!(c, rust, "RHT acceleration mode diverges between drivers");
+    assert_eq!(rust, 2);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_set_voc_algorithm_state() {
+    let state = [0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04];
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_set_voc_algorithm_state(state.as_ptr(), 8) },
+        |driver| {
+            pollster::block_on(driver.set_voc_algorithm_state(&state))
+                .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(&frame[..2], &[0x61, 0x81]);
+    assert_eq!(frame.len(), 14); // 2 command + 8 state bytes + 4 CRCs
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_get_voc_algorithm_state() {
+    let state = [0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04];
+    let (c, rust) = run_c_and_rust(
+        voc_state_payload(state),
+        || {
+            let mut out = [0u8; 8];
+            let rc = unsafe {
+                sen5x_rust::ffi::sen5x_get_voc_algorithm_state(out.as_mut_ptr(), 8)
+            };
+            assert_eq!(rc, 0, "C reference failed to read VOC state");
+            out
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .get_voc_algorithm_state()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+    assert_eq!(c, rust, "VOC state diverges between drivers");
+    assert_eq!(rust, state);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_set_fan_auto_cleaning_interval() {
+    let interval = 0x0102_0304u32;
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_set_fan_auto_cleaning_interval(interval) },
+        |driver| {
+            pollster::block_on(driver.set_fan_auto_cleaning_interval(interval))
+                .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(&frame[..2], &[0x80, 0x04]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
+fn differential_test_get_fan_auto_cleaning_interval() {
+    let interval = 0x0102_0304u32;
+    let (c, rust) = run_c_and_rust(
+        fan_interval_payload(interval),
+        || {
+            let mut out = 0u32;
+            let rc = unsafe {
+                sen5x_rust::ffi::sen5x_get_fan_auto_cleaning_interval(&mut out)
+            };
+            assert_eq!(rc, 0, "C reference failed to read fan interval");
+            out
+        },
+        |payload| {
+            pollster::block_on(async {
+                let mut driver =
+                    PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
+                driver
+                    .get_fan_auto_cleaning_interval()
+                    .await
+                    .expect("pure Rust driver failed")
+            })
+        },
+    );
+    assert_eq!(c, rust, "fan cleaning interval diverges between drivers");
+    assert_eq!(rust, interval);
 }
 
 #[test]
