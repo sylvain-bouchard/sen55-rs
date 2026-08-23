@@ -688,6 +688,20 @@ fn differential_test_start_fan_cleaning() {
 #[test]
 #[cfg(feature = "mock")]
 #[serial]
+fn differential_test_start_measurement_without_pm() {
+    let frame = assert_c_and_rust_write_frames_agree(
+        || unsafe { sen5x_rust::ffi::sen5x_start_measurement_without_pm() },
+        |driver| {
+            pollster::block_on(driver.start_measurement_without_pm())
+                .expect("pure Rust driver failed")
+        },
+    );
+    assert_eq!(frame, vec![0x00, 0x37]);
+}
+
+#[test]
+#[cfg(feature = "mock")]
+#[serial]
 fn differential_test_set_temperature_offset_parameters() {
     let frame = assert_c_and_rust_write_frames_agree(
         || unsafe { sen5x_rust::ffi::sen5x_set_temperature_offset_parameters(-100, 50, 300) },

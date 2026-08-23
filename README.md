@@ -211,7 +211,7 @@ cargo test --workspace --features mock -- --test-threads=1
 Implemented:
 
 - Device reset command
-- Start measurement command
+- Start measurement command (full and without-PM modes)
 - Stop measurement command
 - Data ready command
 - Measurement read command (measured values, raw values, extended PM block)

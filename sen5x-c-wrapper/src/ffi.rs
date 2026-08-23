@@ -6,6 +6,8 @@ unsafe extern "C" {
 
     pub fn sen5x_start_measurement() -> i16;
 
+    pub fn sen5x_start_measurement_without_pm() -> i16;
+
     pub fn sen5x_stop_measurement() -> i16;
 
     pub fn sen5x_read_measured_values(

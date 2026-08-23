@@ -541,6 +541,17 @@ fn start_fan_cleaning_sends_command() {
 }
 
 #[test]
+fn start_measurement_without_pm_sends_command() {
+    let (i2c, delay) = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
+        driver.start_measurement_without_pm().await.unwrap();
+        driver.destroy()
+    });
+    assert_eq!(i2c.commands, vec![vec![0x00, 0x37]]);
+    assert_eq!(delay.calls_us, vec![50_000]);
+}
+
+#[test]
 fn set_and_get_temperature_offset_parameters() {
     let (i2c, delay) = pollster::block_on(async {
         let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());

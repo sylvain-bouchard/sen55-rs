@@ -209,6 +209,16 @@ where
         Ok(())
     }
 
+    /// Starts the measurement in a power-reduced mode without the PM fan and
+    /// laser (0x0037), for sensor variants without particle measurement.
+    pub async fn start_measurement_without_pm(&mut self) -> Result<(), Sen5xError<E>> {
+        self.write_command([0x00, 0x37]).await?;
+
+        self.delay.delay_us(DELAY_50MS_US).await;
+
+        Ok(())
+    }
+
     pub async fn stop_measurement(&mut self) -> Result<(), Sen5xError<E>> {
         self.write_command([0x01, 0x04]).await?;
 
