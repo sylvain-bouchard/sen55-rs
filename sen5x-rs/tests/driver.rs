@@ -18,6 +18,7 @@ impl I2cError for MockError {
 struct MockI2c {
     response: Vec<u8>,
     offset: usize,
+    address: Option<u8>,
     commands: Vec<Vec<u8>>,
 }
 
@@ -26,6 +27,7 @@ impl MockI2c {
         Self {
             response,
             offset: 0,
+            address: None,
             commands: Vec::new(),
         }
     }
@@ -38,9 +40,10 @@ impl ErrorType for MockI2c {
 impl I2c for MockI2c {
     async fn transaction(
         &mut self,
-        _address: u8,
+        address: u8,
         operations: &mut [Operation<'_>],
     ) -> Result<(), MockError> {
+        self.address = Some(address);
         for operation in operations {
             match operation {
                 Operation::Write(bytes) => self.commands.push(bytes.to_vec()),
@@ -115,6 +118,39 @@ fn string_payload(text: &str) -> Vec<u8> {
         word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut payload);
     }
     payload
+}
+
+#[test]
+fn default_constructor_uses_default_i2c_address() {
+    let address = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(
+            MockI2c::with_response(measurements_payload()),
+            MockDelay::default(),
+        );
+        assert_eq!(driver.address(), sen5x_rs::DEFAULT_I2C_ADDRESS);
+        driver.read_measurements().await.unwrap();
+        let (i2c, _) = driver.destroy();
+        i2c.address
+    });
+
+    assert_eq!(address, Some(0x69));
+}
+
+#[test]
+fn custom_constructor_uses_configured_i2c_address() {
+    let address = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new_with_address(
+            MockI2c::with_response(measurements_payload()),
+            MockDelay::default(),
+            0x42,
+        );
+        assert_eq!(driver.address(), 0x42);
+        driver.read_measurements().await.unwrap();
+        let (i2c, _) = driver.destroy();
+        i2c.address
+    });
+
+    assert_eq!(address, Some(0x42));
 }
 
 #[test]

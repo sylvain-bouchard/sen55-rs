@@ -4,7 +4,8 @@ use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::i2c::I2c;
 use sen5x_conversion::{humidity_reading, index_reading, pm_reading, temperature_reading};
 
-const SEN5X_I2C_ADDRESS: u8 = 0x69;
+/// The default 7-bit I2C address used by SEN5x devices.
+pub const DEFAULT_I2C_ADDRESS: u8 = 0x69;
 const MAX_RESPONSE_WORDS: usize = 16;
 
 // Datasheet-mandated response preparation times (mirrored from the reference
@@ -151,6 +152,7 @@ pub struct TuningParameters {
 pub struct Sen5xDriver<I2C, D> {
     i2c: I2C,
     delay: D,
+    address: u8,
 }
 
 impl<I2C, D, E> Sen5xDriver<I2C, D>
@@ -166,8 +168,24 @@ where
     /// or pass a small wrapper implementing `delay_ns` (the only required
     /// method) that awaits `Timer::after_micros`; `delay_us`/`delay_ms` are
     /// provided by the trait.
+    ///
+    /// Creates a driver using the default SEN5x I2C address (`0x69`).
     pub fn new(i2c: I2C, delay: D) -> Self {
-        Self { i2c, delay }
+        Self::new_with_address(i2c, delay, DEFAULT_I2C_ADDRESS)
+    }
+
+    /// Creates a driver using a caller-supplied 7-bit I2C address.
+    pub fn new_with_address(i2c: I2C, delay: D, address: u8) -> Self {
+        Self {
+            i2c,
+            delay,
+            address,
+        }
+    }
+
+    /// Returns the configured 7-bit I2C address.
+    pub fn address(&self) -> u8 {
+        self.address
     }
 
     pub fn destroy(self) -> (I2C, D) {
@@ -550,7 +568,7 @@ where
     }
 
     async fn write_command(&mut self, command: [u8; 2]) -> Result<(), Sen5xError<E>> {
-        self.i2c.write(SEN5X_I2C_ADDRESS, &command).await?;
+        self.i2c.write(self.address, &command).await?;
 
         Ok(())
     }
@@ -599,7 +617,7 @@ where
             len += 3;
         }
 
-        self.i2c.write(SEN5X_I2C_ADDRESS, &buffer[..len]).await?;
+        self.i2c.write(self.address, &buffer[..len]).await?;
 
         Ok(())
     }
@@ -632,9 +650,9 @@ where
         );
         let response = &mut buffer[..response_len];
 
-        self.i2c.write(SEN5X_I2C_ADDRESS, &command).await?;
+        self.i2c.write(self.address, &command).await?;
         self.delay.delay_us(delay_us).await;
-        self.i2c.read(SEN5X_I2C_ADDRESS, response).await?;
+        self.i2c.read(self.address, response).await?;
 
         let mut bytes = [0u8; N];
 
@@ -667,9 +685,9 @@ where
         );
         let response = &mut buffer[..response_len];
 
-        self.i2c.write(SEN5X_I2C_ADDRESS, &command).await?;
+        self.i2c.write(self.address, &command).await?;
         self.delay.delay_us(delay_us).await;
-        self.i2c.read(SEN5X_I2C_ADDRESS, response).await?;
+        self.i2c.read(self.address, response).await?;
 
         let mut words = [0u16; N];
 
