@@ -70,8 +70,11 @@ fn pm_payload(values: [u16; 10]) -> Vec<u8> {
 /// data bytes carry the version fields.
 fn version_payload(bytes: [u8; 8]) -> Vec<u8> {
     let mut payload = Vec::new();
-    for chunk in bytes.chunks_exact(2) {
-        word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut payload);
+    for index in (0..bytes.len()).step_by(2) {
+        word(
+            u16::from_be_bytes([bytes[index], bytes[index + 1]]),
+            &mut payload,
+        );
     }
     payload
 }
@@ -123,8 +126,11 @@ fn rht_acceleration_payload(mode: u16) -> Vec<u8> {
 /// (four words = eight state bytes).
 fn voc_state_payload(state: [u8; 8]) -> Vec<u8> {
     let mut payload = Vec::new();
-    for chunk in state.chunks_exact(2) {
-        word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut payload);
+    for index in (0..state.len()).step_by(2) {
+        word(
+            u16::from_be_bytes([state[index], state[index + 1]]),
+            &mut payload,
+        );
     }
     payload
 }
@@ -152,8 +158,11 @@ fn data_ready_payload(lsb: u8) -> Vec<u8> {
 /// 32 data bytes packed as 16 CRC-protected words.
 fn string_payload(bytes: [u8; 32]) -> Vec<u8> {
     let mut payload = Vec::new();
-    for chunk in bytes.chunks_exact(2) {
-        word(u16::from_be_bytes([chunk[0], chunk[1]]), &mut payload);
+    for index in (0..bytes.len()).step_by(2) {
+        word(
+            u16::from_be_bytes([bytes[index], bytes[index + 1]]),
+            &mut payload,
+        );
     }
     payload
 }
