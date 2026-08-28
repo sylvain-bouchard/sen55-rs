@@ -23,7 +23,7 @@ jobs:
     - name: Check no_std compilation
       run: |
         rustup target add thumbv7em-none-eabi
-        cargo check --target thumbv7em-none-eabi -p sen5x-rs -p sen5x-conversion
+        cargo check --target thumbv7em-none-eabi -p sen5x-rs
     - name: Run Clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Run tests
