@@ -17,11 +17,13 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --workspace --verbose
+    - name: Check documentation
+      run: cargo doc --workspace --no-deps
     - name: Check no_std compilation
       run: |
         rustup target add thumbv7em-none-eabi
-        cargo check --target thumbv7em-none-eabi -p sen5x-rs
+        cargo check --target thumbv7em-none-eabi -p sen5x-rs -p sen5x-conversion
     - name: Run Clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Run tests

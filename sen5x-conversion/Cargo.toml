@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Shared raw-word to physical-unit conversion (sentinels and scale factors) for the SEN5x drivers"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/sylvain-bouchard/sen55-rs"
 keywords = ["embedded", "sensor", "sensirion", "sen55", "sen5x"]
 categories = ["embedded", "no-std", "hardware-support"]
 

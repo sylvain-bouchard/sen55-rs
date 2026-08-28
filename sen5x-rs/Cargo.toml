@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 description = "A no_std Rust driver for Sensirion SEN5x air quality sensors"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/your-username/sen5x-rs"
+repository = "https://github.com/sylvain-bouchard/sen55-rs"
 keywords = ["embedded", "sensor", "sensirion", "sen55", "sen5x"]
 categories = ["embedded", "no-std", "hardware-support"]
 

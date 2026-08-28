@@ -124,6 +124,7 @@ The driver exposes explicit error types:
 pub enum Sen5xError<E> {
     I2c(E),
     Crc,
+    InvalidArgument,
 }
 ```
 
@@ -131,6 +132,7 @@ Errors include:
 
 - I2C communication failures
 - CRC validation failures
+- Invalid arguments rejected before I2C access
 
 ## Validation Strategy
 
