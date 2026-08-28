@@ -56,11 +56,34 @@ fn crc8(data: &[u8]) -> u8 {
     crc
 }
 
-#[derive(Debug)]
+/// Errors returned by the SEN5x driver.
+#[derive(Debug, PartialEq, Eq)]
 pub enum Sen5xError<E> {
+    /// The underlying I2C transaction failed.
     I2c(E),
+    /// A response word contained an invalid CRC.
     Crc,
+    /// A caller supplied an argument that cannot be represented by the wire protocol.
     InvalidArgument,
+}
+
+impl<E> core::fmt::Display for Sen5xError<E>
+where
+    E: core::fmt::Debug,
+{
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::I2c(error) => write!(formatter, "I2C transaction failed: {error:?}"),
+            Self::Crc => formatter.write_str("invalid response CRC"),
+            Self::InvalidArgument => formatter.write_str("invalid driver argument"),
+        }
+    }
+}
+
+impl<E> core::error::Error for Sen5xError<E>
+where
+    E: core::fmt::Debug,
+{
 }
 
 impl<E> From<E> for Sen5xError<E> {
@@ -82,8 +105,26 @@ impl SensorString {
         Self { bytes, len }
     }
 
+    /// Returns the string as UTF-8, excluding the terminating NUL and padding.
     pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
-        core::str::from_utf8(&self.bytes[..self.len])
+        core::str::from_utf8(self.as_bytes())
+    }
+
+    /// Returns the string's raw bytes, excluding the terminating NUL and padding.
+    ///
+    /// This is the lossless accessor when a device returns non-UTF-8 bytes.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+
+    /// Returns the string length excluding the terminating NUL and padding.
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns whether the string contains no bytes before its terminating NUL.
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 

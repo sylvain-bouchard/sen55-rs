@@ -464,6 +464,9 @@ fn read_product_name_returns_sensor_string() {
             .await
             .expect("read_product_name failed");
         assert_eq!(name.as_str(), Ok("SEN55"));
+        assert_eq!(name.as_bytes(), b"SEN55");
+        assert_eq!(name.len(), 5);
+        assert!(!name.is_empty());
 
         driver.destroy()
     });
@@ -487,6 +490,9 @@ fn read_serial_number_returns_sensor_string() {
             .await
             .expect("read_serial_number failed");
         assert_eq!(serial.as_str(), Ok("123456789"));
+        assert_eq!(serial.as_bytes(), b"123456789");
+        assert_eq!(serial.len(), 9);
+        assert!(!serial.is_empty());
 
         driver.destroy()
     });
@@ -494,6 +500,40 @@ fn read_serial_number_returns_sensor_string() {
     assert_eq!(i2c.commands, vec![vec![0xD0, 0x33]]);
     assert_eq!(i2c.offset, 48);
     assert_eq!(delay.calls_us, vec![50_000]);
+}
+
+#[test]
+fn sensor_string_handles_empty_and_full_length_values() {
+    let empty = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(
+            MockI2c::with_response(string_payload("")),
+            MockDelay::default(),
+        );
+        driver.read_product_name().await.unwrap()
+    });
+    assert!(empty.is_empty());
+    assert_eq!(empty.len(), 0);
+    assert_eq!(empty.as_bytes(), b"");
+    assert_eq!(empty.as_str(), Ok(""));
+
+    let full = pollster::block_on(async {
+        let mut driver = Sen5xDriver::new(
+            MockI2c::with_response(string_payload("12345678901234567890123456789012")),
+            MockDelay::default(),
+        );
+        driver.read_product_name().await.unwrap()
+    });
+    assert_eq!(full.len(), 32);
+    assert!(!full.is_empty());
+    assert_eq!(full.as_bytes(), b"12345678901234567890123456789012");
+}
+
+#[test]
+fn errors_have_debuggable_display_messages() {
+    let crc = Sen5xError::<MockError>::Crc;
+    let invalid = Sen5xError::<MockError>::InvalidArgument;
+    assert_eq!(crc.to_string(), "invalid response CRC");
+    assert_eq!(invalid.to_string(), "invalid driver argument");
 }
 
 #[test]
