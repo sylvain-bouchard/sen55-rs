@@ -92,6 +92,11 @@ impl<E> From<E> for Sen5xError<E> {
     }
 }
 
+/// A fixed-capacity string returned by the SEN5x.
+///
+/// The sensor returns up to 32 bytes, NUL-terminated and padded. The driver
+/// removes the terminator and padding without allocating. Use [`as_str`](Self::as_str)
+/// for UTF-8 data or [`as_bytes`](Self::as_bytes) to preserve arbitrary bytes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SensorString {
     bytes: [u8; 32],
@@ -128,6 +133,11 @@ impl SensorString {
     }
 }
 
+/// Converted environmental and particulate-matter measurements.
+///
+/// `None` indicates the sensor's protocol sentinel for unavailable data or a
+/// channel that is not supported by the connected SEN5x variant. Measurement
+/// methods should generally be called while the sensor is running.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Sen5xMeasurements {
     /// PM concentrations in µg/m³, `None` when the sensor reports no data (0xFFFF)
@@ -251,10 +261,15 @@ where
         self.address
     }
 
+    /// Consumes the driver and returns the underlying I2C bus and delay provider.
     pub fn destroy(self) -> (I2C, D) {
         (self.i2c, self.delay)
     }
 
+    /// Resets the sensor and waits for its reboot to complete.
+    ///
+    /// The sensor must be restarted with a measurement command before reading
+    /// measurements again.
     pub async fn device_reset(&mut self) -> Result<(), Sen5xError<E>> {
         self.write_command(CMD_DEVICE_RESET).await?;
 
@@ -265,10 +280,12 @@ where
         Ok(())
     }
 
+    /// Reads the product name returned by the sensor.
     pub async fn read_product_name(&mut self) -> Result<SensorString, Sen5xError<E>> {
         self.read_string32(CMD_READ_PRODUCT_NAME, DELAY_50MS_US).await
     }
 
+    /// Reads the sensor serial number.
     pub async fn read_serial_number(&mut self) -> Result<SensorString, Sen5xError<E>> {
         self.read_string32(CMD_READ_SERIAL_NUMBER, DELAY_50MS_US).await
     }
@@ -283,6 +300,11 @@ where
         Ok(((words[0] as u32) << 16) | words[1] as u32)
     }
 
+    /// Starts continuous measurement with particulate-matter sensing enabled.
+    ///
+    /// Waits the datasheet-mandated startup delay before returning. Use
+    /// [`stop_measurement`](Self::stop_measurement) before issuing commands
+    /// that require measurement mode to be stopped.
     pub async fn start_measurement(&mut self) -> Result<(), Sen5xError<E>> {
         self.write_command(CMD_START_MEASUREMENT).await?;
 
@@ -301,6 +323,7 @@ where
         Ok(())
     }
 
+    /// Stops continuous measurement and waits for the sensor to become idle.
     pub async fn stop_measurement(&mut self) -> Result<(), Sen5xError<E>> {
         self.write_command(CMD_STOP_MEASUREMENT).await?;
 
@@ -336,6 +359,11 @@ where
     /// The `0xFFFF`/`0x7FFF` "no data" sentinels and the scale factors are
     /// defined once in [`sen5x_conversion`], the same crate the C reference
     /// facade uses, so the two drivers cannot drift on this logic.
+    /// Reads and converts the latest environmental and PM measurements.
+    ///
+    /// PM values are returned in µg/m³, humidity in percent relative humidity,
+    /// temperature in °C, and VOC/NOx as index values. Unavailable values are
+    /// returned as `None`.
     pub async fn read_measurements(&mut self) -> Result<Sen5xMeasurements, Sen5xError<E>> {
         let words = self.read_words::<8>(CMD_READ_MEASUREMENTS, DELAY_20MS_US).await?;
 
