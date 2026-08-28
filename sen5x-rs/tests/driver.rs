@@ -461,7 +461,7 @@ fn read_serial_number_returns_sensor_string() {
 }
 
 #[test]
-fn read_data_ready_response_polls_the_flag() {
+fn read_data_ready_polls_the_flag() {
     let (i2c, delay) = pollster::block_on(async {
         let mut ready_payload = Vec::new();
         word(0x0001, &mut ready_payload); // data ready
@@ -469,7 +469,7 @@ fn read_data_ready_response_polls_the_flag() {
         let mut driver =
             Sen5xDriver::new(MockI2c::with_response(ready_payload), MockDelay::default());
         assert!(driver
-            .read_data_ready_response()
+            .read_data_ready()
             .await
             .expect("read failed"));
 
@@ -485,7 +485,7 @@ fn read_data_ready_response_polls_the_flag() {
         let mut driver =
             Sen5xDriver::new(MockI2c::with_response(not_ready_payload), MockDelay::default());
         driver
-            .read_data_ready_response()
+            .read_data_ready()
             .await
             .expect("read failed")
     });
@@ -493,7 +493,7 @@ fn read_data_ready_response_polls_the_flag() {
 }
 
 #[test]
-fn request_data_ready_and_write_only_commands_send_expected_bytes() {
+fn request_data_ready_sends_command_without_delay() {
     let (i2c, delay) = pollster::block_on(async {
         let mut driver = Sen5xDriver::new(MockI2c::with_response(Vec::new()), MockDelay::default());
 

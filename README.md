@@ -216,7 +216,7 @@ Implemented:
 - Device reset command
 - Start measurement command (full and without-PM modes)
 - Stop measurement command
-- Data ready command
+- Data-ready polling command (`read_data_ready`)
 - Measurement read command (measured values, raw values, extended PM block)
 - Device status read and read-and-clear
 - Product name and serial number

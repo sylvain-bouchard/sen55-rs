@@ -228,22 +228,22 @@ where
         Ok(())
     }
 
-    /// Triggers the data-ready state check sequence.
+    /// Sends the 0x0202 data-ready command without reading its response.
     ///
-    /// This is optional: `read_data_ready_response` sends the command itself
-    /// and handles the required wait internally. This method only lets the
-    /// caller fire the command early.
+    /// Most callers should use [`read_data_ready`](Self::read_data_ready),
+    /// which performs the complete write-delay-read transaction. This method
+    /// is provided for applications that need to issue the command separately.
     pub async fn request_data_ready(&mut self) -> Result<(), Sen5xError<E>> {
         self.write_command([0x02, 0x02]).await
     }
 
-    /// Polls the data-ready flag by sending the 0x0202 command, waiting the
+    /// Reads the data-ready flag by sending the 0x0202 command, waiting the
     /// datasheet-mandated 20 ms, then reading back the 3-byte status packet.
     ///
     /// Mirrors the reference C driver, which assigns the raw second data byte
     /// to the output (`*data_ready = buffer[1]`): any nonzero value reports
     /// ready, not just exactly 1.
-    pub async fn read_data_ready_response(&mut self) -> Result<bool, Sen5xError<E>> {
+    pub async fn read_data_ready(&mut self) -> Result<bool, Sen5xError<E>> {
         let data = self.read_bytes::<2>([0x02, 0x02], DELAY_20MS_US).await?;
 
         Ok(data[1] != 0)

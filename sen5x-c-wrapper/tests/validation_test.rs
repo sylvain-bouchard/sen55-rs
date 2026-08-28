@@ -1162,7 +1162,7 @@ fn differential_test_read_data_ready() {
                     let mut driver =
                         PureRustDriver::new(MockI2c::with_response(payload), MockDelay);
                     driver
-                        .read_data_ready_response()
+                        .read_data_ready()
                         .await
                         .expect("pure Rust driver failed")
                 })
