@@ -2,7 +2,36 @@
 
 use embedded_hal_async::delay::DelayNs;
 use embedded_hal_async::i2c::I2c;
-use sen5x_conversion::{humidity_reading, index_reading, pm_reading, temperature_reading};
+pub mod conversion {
+    pub const PM_SENTINEL: u16 = 0xFFFF;
+    pub const ENV_SENTINEL: i16 = 0x7FFF;
+    const PM_MASS_SCALE: f32 = 10.0;
+    const HUMIDITY_SCALE: f32 = 100.0;
+    const TEMPERATURE_SCALE: f32 = 200.0;
+    const INDEX_SCALE: f32 = 10.0;
+
+    #[inline]
+    pub fn pm_reading(raw: u16) -> Option<f32> {
+        (raw != PM_SENTINEL).then(|| raw as f32 / PM_MASS_SCALE)
+    }
+
+    #[inline]
+    pub fn humidity_reading(raw: i16) -> Option<f32> {
+        (raw != ENV_SENTINEL).then(|| raw as f32 / HUMIDITY_SCALE)
+    }
+
+    #[inline]
+    pub fn temperature_reading(raw: i16) -> Option<f32> {
+        (raw != ENV_SENTINEL).then(|| raw as f32 / TEMPERATURE_SCALE)
+    }
+
+    #[inline]
+    pub fn index_reading(raw: i16) -> Option<f32> {
+        (raw != ENV_SENTINEL).then(|| raw as f32 / INDEX_SCALE)
+    }
+}
+
+pub use conversion::{humidity_reading, index_reading, pm_reading, temperature_reading};
 
 /// The default 7-bit I2C address used by SEN5x devices.
 pub const DEFAULT_I2C_ADDRESS: u8 = 0x69;
@@ -357,8 +386,9 @@ where
     /// them into physical units.
     ///
     /// The `0xFFFF`/`0x7FFF` "no data" sentinels and the scale factors are
-    /// defined once in [`sen5x_conversion`], the same crate the C reference
-    /// facade uses, so the two drivers cannot drift on this logic.
+    /// defined in this crate's shared conversion module, which is also used
+    /// by the reference facade, so the two implementations cannot drift.
+    ///
     /// Reads and converts the latest environmental and PM measurements.
     ///
     /// PM values are returned in µg/m³, humidity in percent relative humidity,

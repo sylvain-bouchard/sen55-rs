@@ -8,7 +8,7 @@ resolver = "2"
 
 [dependencies]
 crc8 = "0.1.1"
-sen5x-conversion = { path = "../sen5x-conversion" }
+sen5x-rs = { path = "../sen5x-rs" }
 # Standard embedded abstraction traits (Async variant)
 embedded-hal-async = "1.0.0"
 embedded-hal = "1.0.0"

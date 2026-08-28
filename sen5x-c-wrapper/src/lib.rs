@@ -2,7 +2,7 @@
 
 pub mod ffi;
 
-use sen5x_conversion::{humidity_reading, index_reading, pm_reading, temperature_reading};
+use sen5x_rs::{humidity_reading, index_reading, pm_reading, temperature_reading};
 
 /// Custom error type wrapping the raw C status return values
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -53,7 +53,7 @@ impl Sen5xDriver {
     pub fn is_data_ready(&mut self) -> Result<bool, Sen5xError> {
         let mut ready = false;
         let rc = unsafe { ffi::sen5x_read_data_ready(&mut ready) };
-        
+
         if rc == 0 {
             Ok(ready)
         } else {
