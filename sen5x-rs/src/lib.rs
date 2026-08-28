@@ -562,6 +562,10 @@ where
         command: [u8; 2],
         words: &[u16],
     ) -> Result<(), Sen5xError<E>> {
+        if words.len() > MAX_RESPONSE_WORDS {
+            return Err(Sen5xError::InvalidArgument);
+        }
+
         let mut payload = [0u8; MAX_RESPONSE_WORDS * 2];
         for (index, &word) in words.iter().enumerate() {
             payload[index * 2..index * 2 + 2].copy_from_slice(&word.to_be_bytes());
@@ -579,7 +583,7 @@ where
         command: [u8; 2],
         payload: &[u8],
     ) -> Result<(), Sen5xError<E>> {
-        if payload.len() % 2 != 0 {
+        if payload.len() % 2 != 0 || payload.len() / 2 > MAX_RESPONSE_WORDS {
             return Err(Sen5xError::InvalidArgument);
         }
 
@@ -616,6 +620,10 @@ where
         command: [u8; 2],
         delay_us: u32,
     ) -> Result<[u8; N], Sen5xError<E>> {
+        if N % 2 != 0 || N / 2 > MAX_RESPONSE_WORDS {
+            return Err(Sen5xError::InvalidArgument);
+        }
+
         let mut buffer = [0u8; MAX_RESPONSE_WORDS * 3];
         let response_len = (N / 2) * 3;
         debug_assert!(
@@ -647,6 +655,10 @@ where
         command: [u8; 2],
         delay_us: u32,
     ) -> Result<[u16; N], Sen5xError<E>> {
+        if N > MAX_RESPONSE_WORDS {
+            return Err(Sen5xError::InvalidArgument);
+        }
+
         let mut buffer = [0u8; MAX_RESPONSE_WORDS * 3];
         let response_len = N * 3;
         debug_assert!(
@@ -678,5 +690,101 @@ where
         let bytes = self.read_bytes::<32>(command, delay_us).await?;
 
         Ok(SensorString::from_bytes(bytes))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Sen5xDriver, Sen5xError, MAX_RESPONSE_WORDS};
+    use embedded_hal_async::delay::DelayNs;
+    use embedded_hal_async::i2c::{Error as I2cError, ErrorKind, ErrorType, I2c, Operation};
+
+    #[derive(Debug)]
+    struct MockError;
+
+    impl I2cError for MockError {
+        fn kind(&self) -> ErrorKind {
+            ErrorKind::Other
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct MockI2c;
+
+    impl ErrorType for MockI2c {
+        type Error = MockError;
+    }
+
+    impl I2c for MockI2c {
+        async fn transaction(
+            &mut self,
+            _address: u8,
+            _operations: &mut [Operation<'_>],
+        ) -> Result<(), MockError> {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct MockDelay;
+
+    impl DelayNs for MockDelay {
+        async fn delay_ns(&mut self, _ns: u32) {}
+    }
+
+    #[test]
+    fn oversized_write_payload_is_rejected_before_i2c() {
+        let result = pollster::block_on(async {
+            let mut driver = Sen5xDriver::new(MockI2c, MockDelay);
+            let words = [0u16; MAX_RESPONSE_WORDS + 1];
+            driver.write_command_with_words([0, 0], &words).await
+        });
+
+        assert!(matches!(result, Err(Sen5xError::InvalidArgument)));
+    }
+
+    #[test]
+    fn oversized_and_odd_write_payloads_are_rejected_before_i2c() {
+        let result = pollster::block_on(async {
+            let mut driver = Sen5xDriver::new(MockI2c, MockDelay);
+            let oversized = [0u8; MAX_RESPONSE_WORDS * 2 + 2];
+            let odd = [0u8; 1];
+
+            let oversized_result = driver
+                .write_command_with_payload([0, 0], &oversized)
+                .await;
+            let odd_result = driver.write_command_with_payload([0, 0], &odd).await;
+
+            (oversized_result, odd_result)
+        });
+
+        assert!(matches!(result.0, Err(Sen5xError::InvalidArgument)));
+        assert!(matches!(result.1, Err(Sen5xError::InvalidArgument)));
+    }
+
+    #[test]
+    fn invalid_read_sizes_are_rejected_before_i2c() {
+        let odd = pollster::block_on(async {
+            let mut driver = Sen5xDriver::new(MockI2c, MockDelay);
+            driver.read_bytes::<1>([0, 0], 0).await
+        });
+        let oversized_bytes = pollster::block_on(async {
+            let mut driver = Sen5xDriver::new(MockI2c, MockDelay);
+            driver.read_bytes::<{ MAX_RESPONSE_WORDS * 2 + 2 }>([0, 0], 0).await
+        });
+        let oversized_words = pollster::block_on(async {
+            let mut driver = Sen5xDriver::new(MockI2c, MockDelay);
+            driver.read_words::<{ MAX_RESPONSE_WORDS + 1 }>([0, 0], 0).await
+        });
+
+        assert!(matches!(odd, Err(Sen5xError::InvalidArgument)));
+        assert!(matches!(
+            oversized_bytes,
+            Err(Sen5xError::InvalidArgument)
+        ));
+        assert!(matches!(
+            oversized_words,
+            Err(Sen5xError::InvalidArgument)
+        ));
     }
 }
