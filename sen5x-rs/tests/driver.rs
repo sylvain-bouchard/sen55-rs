@@ -383,10 +383,7 @@ fn get_version_parses_all_fields() {
 
         let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
 
-        let version = driver
-            .get_version()
-            .await
-            .expect("get_version failed");
+        let version = driver.get_version().await.expect("get_version failed");
         assert_eq!(version.firmware_major, 1);
         assert_eq!(version.firmware_minor, 2);
         assert!(!version.firmware_debug);
@@ -544,10 +541,7 @@ fn read_data_ready_polls_the_flag() {
 
         let mut driver =
             Sen5xDriver::new(MockI2c::with_response(ready_payload), MockDelay::default());
-        assert!(driver
-            .read_data_ready()
-            .await
-            .expect("read failed"));
+        assert!(driver.read_data_ready().await.expect("read failed"));
 
         driver.destroy()
     });
@@ -558,12 +552,11 @@ fn read_data_ready_polls_the_flag() {
         let mut not_ready_payload = Vec::new();
         word(0x0000, &mut not_ready_payload); // no fresh sample
 
-        let mut driver =
-            Sen5xDriver::new(MockI2c::with_response(not_ready_payload), MockDelay::default());
-        driver
-            .read_data_ready()
-            .await
-            .expect("read failed")
+        let mut driver = Sen5xDriver::new(
+            MockI2c::with_response(not_ready_payload),
+            MockDelay::default(),
+        );
+        driver.read_data_ready().await.expect("read failed")
     });
     assert!(!not_ready);
 }
@@ -650,10 +643,7 @@ fn set_and_get_temperature_offset_parameters() {
         word(300u16, &mut payload);
 
         let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
-        let params = driver
-            .get_temperature_offset_parameters()
-            .await
-            .unwrap();
+        let params = driver.get_temperature_offset_parameters().await.unwrap();
         assert_eq!(params.temp_offset, -100);
         assert_eq!(params.slope, 50);
         assert_eq!(params.time_constant, 300);
@@ -733,7 +723,10 @@ fn set_and_get_voc_algorithm_tuning_parameters() {
         }
 
         let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
-        assert_eq!(driver.get_voc_algorithm_tuning_parameters().await.unwrap(), params);
+        assert_eq!(
+            driver.get_voc_algorithm_tuning_parameters().await.unwrap(),
+            params
+        );
         driver.destroy()
     });
     assert_eq!(i2c.commands, vec![vec![0x60, 0xD0]]);
@@ -765,7 +758,10 @@ fn set_and_get_nox_algorithm_tuning_parameters() {
         }
 
         let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
-        assert_eq!(driver.get_nox_algorithm_tuning_parameters().await.unwrap(), params);
+        assert_eq!(
+            driver.get_nox_algorithm_tuning_parameters().await.unwrap(),
+            params
+        );
         driver.destroy()
     });
     assert_eq!(i2c.commands, vec![vec![0x60, 0xE1]]);
@@ -849,7 +845,10 @@ fn set_and_get_fan_auto_cleaning_interval() {
     });
     assert_eq!(
         i2c.commands,
-        vec![set_frame([0x80, 0x04], &[(interval >> 16) as u16, interval as u16])]
+        vec![set_frame(
+            [0x80, 0x04],
+            &[(interval >> 16) as u16, interval as u16]
+        )]
     );
     assert_eq!(delay.calls_us, vec![20_000]);
 
@@ -859,7 +858,10 @@ fn set_and_get_fan_auto_cleaning_interval() {
         word(interval as u16, &mut payload);
 
         let mut driver = Sen5xDriver::new(MockI2c::with_response(payload), MockDelay::default());
-        assert_eq!(driver.get_fan_auto_cleaning_interval().await.unwrap(), interval);
+        assert_eq!(
+            driver.get_fan_auto_cleaning_interval().await.unwrap(),
+            interval
+        );
         driver.destroy()
     });
     assert_eq!(i2c.commands, vec![vec![0x80, 0x04]]);

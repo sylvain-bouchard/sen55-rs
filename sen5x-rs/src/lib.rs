@@ -109,11 +109,7 @@ where
     }
 }
 
-impl<E> core::error::Error for Sen5xError<E>
-where
-    E: core::fmt::Debug,
-{
-}
+impl<E> core::error::Error for Sen5xError<E> where E: core::fmt::Debug {}
 
 impl<E> From<E> for Sen5xError<E> {
     fn from(error: E) -> Self {
@@ -311,12 +307,14 @@ where
 
     /// Reads the product name returned by the sensor.
     pub async fn read_product_name(&mut self) -> Result<SensorString, Sen5xError<E>> {
-        self.read_string32(CMD_READ_PRODUCT_NAME, DELAY_50MS_US).await
+        self.read_string32(CMD_READ_PRODUCT_NAME, DELAY_50MS_US)
+            .await
     }
 
     /// Reads the sensor serial number.
     pub async fn read_serial_number(&mut self) -> Result<SensorString, Sen5xError<E>> {
-        self.read_string32(CMD_READ_SERIAL_NUMBER, DELAY_50MS_US).await
+        self.read_string32(CMD_READ_SERIAL_NUMBER, DELAY_50MS_US)
+            .await
     }
 
     /// Reads the 32-bit device status register.
@@ -324,7 +322,9 @@ where
     /// The status flags are bit-encoded in a 32-bit integer (see the SEN5x
     /// datasheet for the flag bit assignments).
     pub async fn read_device_status(&mut self) -> Result<u32, Sen5xError<E>> {
-        let words = self.read_words::<2>(CMD_READ_DEVICE_STATUS, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<2>(CMD_READ_DEVICE_STATUS, DELAY_20MS_US)
+            .await?;
 
         Ok(((words[0] as u32) << 16) | words[1] as u32)
     }
@@ -377,7 +377,9 @@ where
     /// to the output (`*data_ready = buffer[1]`): any nonzero value reports
     /// ready, not just exactly 1.
     pub async fn read_data_ready(&mut self) -> Result<bool, Sen5xError<E>> {
-        let data = self.read_bytes::<2>(CMD_READ_DATA_READY, DELAY_20MS_US).await?;
+        let data = self
+            .read_bytes::<2>(CMD_READ_DATA_READY, DELAY_20MS_US)
+            .await?;
 
         Ok(data[1] != 0)
     }
@@ -395,7 +397,9 @@ where
     /// temperature in °C, and VOC/NOx as index values. Unavailable values are
     /// returned as `None`.
     pub async fn read_measurements(&mut self) -> Result<Sen5xMeasurements, Sen5xError<E>> {
-        let words = self.read_words::<8>(CMD_READ_MEASUREMENTS, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<8>(CMD_READ_MEASUREMENTS, DELAY_20MS_US)
+            .await?;
 
         Ok(Sen5xMeasurements {
             pm1_0: pm_reading(words[0]),
@@ -417,7 +421,9 @@ where
     pub async fn read_measured_raw_values(
         &mut self,
     ) -> Result<Sen5xRawMeasurements, Sen5xError<E>> {
-        let words = self.read_words::<4>(CMD_READ_RAW_MEASUREMENTS, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<4>(CMD_READ_RAW_MEASUREMENTS, DELAY_20MS_US)
+            .await?;
 
         Ok(Sen5xRawMeasurements {
             humidity: words[0] as i16,
@@ -429,10 +435,10 @@ where
 
     /// Reads the extended PM block: mass concentrations (÷ 10 for µg/m³),
     /// number concentrations and typical particle size, all as raw words.
-    pub async fn read_measured_pm_values(
-        &mut self,
-    ) -> Result<Sen5xPmMeasurements, Sen5xError<E>> {
-        let words = self.read_words::<10>(CMD_READ_PM_MEASUREMENTS, DELAY_20MS_US).await?;
+    pub async fn read_measured_pm_values(&mut self) -> Result<Sen5xPmMeasurements, Sen5xError<E>> {
+        let words = self
+            .read_words::<10>(CMD_READ_PM_MEASUREMENTS, DELAY_20MS_US)
+            .await?;
 
         Ok(Sen5xPmMeasurements {
             mass_pm1_0: words[0],
@@ -480,7 +486,9 @@ where
     /// [`read_device_status`](Self::read_device_status) but resetting the
     /// flags after the read.
     pub async fn read_and_clear_device_status(&mut self) -> Result<u32, Sen5xError<E>> {
-        let words = self.read_words::<2>(CMD_READ_AND_CLEAR_DEVICE_STATUS, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<2>(CMD_READ_AND_CLEAR_DEVICE_STATUS, DELAY_20MS_US)
+            .await?;
 
         Ok(((words[0] as u32) << 16) | words[1] as u32)
     }
@@ -517,7 +525,9 @@ where
     pub async fn get_temperature_offset_parameters(
         &mut self,
     ) -> Result<TemperatureOffsetParameters, Sen5xError<E>> {
-        let words = self.read_words::<3>(CMD_TEMPERATURE_OFFSET, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<3>(CMD_TEMPERATURE_OFFSET, DELAY_20MS_US)
+            .await?;
 
         Ok(TemperatureOffsetParameters {
             temp_offset: words[0] as i16,
@@ -528,7 +538,8 @@ where
 
     /// Sets the warm start behavior (0x60C6): 0 = cold start, 1 = warm start.
     pub async fn set_warm_start_parameter(&mut self, warm_start: u16) -> Result<(), Sen5xError<E>> {
-        self.write_command_with_words(CMD_WARM_START, &[warm_start]).await?;
+        self.write_command_with_words(CMD_WARM_START, &[warm_start])
+            .await?;
 
         self.delay.delay_us(DELAY_20MS_US).await;
 
@@ -623,7 +634,8 @@ where
     /// Sets the RH/T acceleration mode (0x60F7): 0 = slow, 1 = medium,
     /// 2 = fast.
     pub async fn set_rht_acceleration_mode(&mut self, mode: u16) -> Result<(), Sen5xError<E>> {
-        self.write_command_with_words(CMD_RHT_ACCELERATION, &[mode]).await?;
+        self.write_command_with_words(CMD_RHT_ACCELERATION, &[mode])
+            .await?;
 
         self.delay.delay_us(DELAY_20MS_US).await;
 
@@ -632,7 +644,9 @@ where
 
     /// Reads the configured RH/T acceleration mode.
     pub async fn get_rht_acceleration_mode(&mut self) -> Result<u16, Sen5xError<E>> {
-        let words = self.read_words::<1>(CMD_RHT_ACCELERATION, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<1>(CMD_RHT_ACCELERATION, DELAY_20MS_US)
+            .await?;
 
         Ok(words[0])
     }
@@ -641,7 +655,8 @@ where
     /// applied on the next measurement start. The state must be an even
     /// number of bytes (each word is CRC-protected on the wire).
     pub async fn set_voc_algorithm_state(&mut self, state: &[u8]) -> Result<(), Sen5xError<E>> {
-        self.write_command_with_payload(CMD_VOC_ALGORITHM_STATE, state).await?;
+        self.write_command_with_payload(CMD_VOC_ALGORITHM_STATE, state)
+            .await?;
 
         self.delay.delay_us(DELAY_20MS_US).await;
 
@@ -654,7 +669,9 @@ where
     /// Mirrors the reference C driver, which sends the *set* command code
     /// 0x6181 and reads back 4 words.
     pub async fn get_voc_algorithm_state(&mut self) -> Result<[u8; 8], Sen5xError<E>> {
-        let words = self.read_words::<4>(CMD_VOC_ALGORITHM_STATE, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<4>(CMD_VOC_ALGORITHM_STATE, DELAY_20MS_US)
+            .await?;
 
         let mut state = [0u8; 8];
         for (index, word) in words.iter().enumerate() {
@@ -683,7 +700,9 @@ where
 
     /// Reads the configured fan auto cleaning interval in seconds.
     pub async fn get_fan_auto_cleaning_interval(&mut self) -> Result<u32, Sen5xError<E>> {
-        let words = self.read_words::<2>(CMD_FAN_AUTO_CLEANING_INTERVAL, DELAY_20MS_US).await?;
+        let words = self
+            .read_words::<2>(CMD_FAN_AUTO_CLEANING_INTERVAL, DELAY_20MS_US)
+            .await?;
 
         Ok(((words[0] as u32) << 16) | words[1] as u32)
     }
@@ -834,7 +853,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{Sen5xDriver, Sen5xError, MAX_RESPONSE_WORDS};
+    use super::{MAX_RESPONSE_WORDS, Sen5xDriver, Sen5xError};
     use embedded_hal_async::delay::DelayNs;
     use embedded_hal_async::i2c::{Error as I2cError, ErrorKind, ErrorType, I2c, Operation};
 
@@ -889,9 +908,7 @@ mod tests {
             let oversized = [0u8; MAX_RESPONSE_WORDS * 2 + 2];
             let odd = [0u8; 1];
 
-            let oversized_result = driver
-                .write_command_with_payload([0, 0], &oversized)
-                .await;
+            let oversized_result = driver.write_command_with_payload([0, 0], &oversized).await;
             let odd_result = driver.write_command_with_payload([0, 0], &odd).await;
 
             (oversized_result, odd_result)
@@ -909,21 +926,19 @@ mod tests {
         });
         let oversized_bytes = pollster::block_on(async {
             let mut driver = Sen5xDriver::new(MockI2c, MockDelay);
-            driver.read_bytes::<{ MAX_RESPONSE_WORDS * 2 + 2 }>([0, 0], 0).await
+            driver
+                .read_bytes::<{ MAX_RESPONSE_WORDS * 2 + 2 }>([0, 0], 0)
+                .await
         });
         let oversized_words = pollster::block_on(async {
             let mut driver = Sen5xDriver::new(MockI2c, MockDelay);
-            driver.read_words::<{ MAX_RESPONSE_WORDS + 1 }>([0, 0], 0).await
+            driver
+                .read_words::<{ MAX_RESPONSE_WORDS + 1 }>([0, 0], 0)
+                .await
         });
 
         assert!(matches!(odd, Err(Sen5xError::InvalidArgument)));
-        assert!(matches!(
-            oversized_bytes,
-            Err(Sen5xError::InvalidArgument)
-        ));
-        assert!(matches!(
-            oversized_words,
-            Err(Sen5xError::InvalidArgument)
-        ));
+        assert!(matches!(oversized_bytes, Err(Sen5xError::InvalidArgument)));
+        assert!(matches!(oversized_words, Err(Sen5xError::InvalidArgument)));
     }
 }
