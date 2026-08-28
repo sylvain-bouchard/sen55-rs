@@ -231,6 +231,22 @@ Implemented:
 - Invalid value handling
 - Differential testing against C reference
 
+## Public API Stability
+
+The driver is currently published as version `0.x`, so breaking API changes may be introduced in minor releases before `1.0`. We will nevertheless aim to keep the API coherent and document migration guidance for intentional breaking changes.
+
+The following are part of the public API and may evolve before `1.0`:
+
+- `Sen5xDriver` constructors and methods
+- `Sen5xError` and its variants
+- `SensorString` and its accessors
+- Measurement, raw-measurement, extended-PM, status, and configuration types
+- Public constants such as `DEFAULT_I2C_ADDRESS`
+
+The wire protocol behavior is intended to remain compatible with Sensirion's reference C implementation. Changes to protocol support, conversion semantics, or supported sensor variants will be documented in the changelog and covered by the differential test suite.
+
+Once the API and protocol coverage are considered stable, the project can target a `1.0` release with stronger compatibility guarantees. Until then, pin a compatible crate version if your application requires a stable API.
+
 ## Future Work
 
 Possible improvements:
